@@ -1,0 +1,7 @@
+{
+  "name": "example-plugin",
+  "version": "1.2.3",
+  "description": "A sample plugin listed in marketplace.json",
+  "author": { "name": "Example Author" },
+  "keywords": ["demo"]
+}

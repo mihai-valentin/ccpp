@@ -1,0 +1,11 @@
+{
+  "name": "Example Marketplace",
+  "owner": { "name": "Example Org" },
+  "plugins": [
+    {
+      "name": "example-plugin",
+      "source": "./plugins/example-plugin",
+      "description": "A sample plugin listed in marketplace.json"
+    }
+  ]
+}

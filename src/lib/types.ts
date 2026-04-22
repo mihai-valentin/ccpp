@@ -39,44 +39,82 @@ export interface Manifest {
 }
 
 /**
- * Describes a single plugin bundle within a source — a cohesive
- * collection of skills and/or slash commands shipped together.
+ * A single Claude Code slash command definition discovered inside a source
+ * repository. Produced by the manifest parser.
+ */
+export interface SlashCommand {
+  /** Command short name, without the leading slash. Derived from the file basename. */
+  name: string;
+  /** Absolute path to the backing `.md` file on disk. */
+  sourceFile: string;
+}
+
+/**
+ * A single Claude Code skill discovered inside a source repository.
+ * A skill is a directory containing `SKILL.md` and, optionally, supporting files.
+ */
+export interface Skill {
+  /** Skill short name. Derived from the enclosing directory. */
+  name: string;
+  /** Absolute path to the skill's root directory. */
+  sourceDir: string;
+  /** Absolute paths of every file contained in the skill directory (recursive). */
+  files: string[];
+}
+
+/**
+ * A plugin discovered inside a source repository.
  */
 export interface PluginManifest {
   /** Short name of the plugin (used as command prefix in Claude Code). */
   name: string;
+  /** Semver string declared in the plugin's `plugin.json`. */
+  version: string;
   /** Human-readable description. */
-  description?: string;
-  /** Skills exposed by this plugin. */
-  skills?: Skill[];
+  description: string;
+  /** Optional author info. */
+  author?: string | { name: string };
+  /** Absolute path to the plugin's root directory. */
+  dir: string;
   /** Slash commands exposed by this plugin. */
-  commands?: SlashCommand[];
+  commands: SlashCommand[];
+  /** Skills exposed by this plugin. */
+  skills: Skill[];
 }
 
 /**
- * A single Claude Code skill definition as distributed by ccpp.
- * Metadata only — the actual skill body lives on disk as a SKILL.md file.
+ * Result of {@link parseManifest} — a repo's plugins and standalone commands
+ * resolved from either a `.claude-plugin/marketplace.json` or a convention scan.
  */
-export interface Skill {
-  /** Skill short name. */
-  name: string;
-  /** Path (relative to plugin root) to the SKILL.md file. */
-  path: string;
-  /** One-line description shown in skill listings. */
-  description?: string;
+export interface ResolvedManifest {
+  /** Absolute path to the source repository root. */
+  sourceDir: string;
+  /** Marketplace display name when loaded from `marketplace.json`; undefined for convention scans. */
+  marketplaceName?: string;
+  /** Plugins declared by the source repo. */
+  plugins: PluginManifest[];
+  /** Top-level slash commands not bound to any plugin (from `commands/*.md` at repo root). */
+  standaloneCommands: SlashCommand[];
 }
 
 /**
- * A single Claude Code slash command definition.
- * Metadata only — the command body lives on disk as a markdown file.
+ * Raw shape of a repo-level `.claude-plugin/marketplace.json`, validated by the parser.
  */
-export interface SlashCommand {
-  /** Command short name, without the leading slash. */
+export interface MarketplaceJson {
+  name?: string;
+  owner?: string | { name?: string };
+  plugins?: Array<{ name: string; source: string; description?: string }>;
+}
+
+/**
+ * Raw shape of a per-plugin `.claude-plugin/plugin.json`, validated by the parser.
+ */
+export interface PluginJson {
   name: string;
-  /** Path (relative to plugin root) to the command definition file. */
-  path: string;
-  /** One-line description shown in command listings. */
-  description?: string;
+  version: string;
+  description: string;
+  author?: string | { name: string };
+  keywords?: string[];
 }
 
 /**
