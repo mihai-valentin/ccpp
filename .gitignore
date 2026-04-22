@@ -9,3 +9,14 @@ dist/
 coverage/
 .vitest-cache/
 .cache/
+
+# Root-session-owned artifacts (managed by xlnf root, not by ccpp's own git)
+CLAUDE.md
+idea.md
+.claude/
+
+# Shawarma orchestration state (per-project DB, runs, task backups)
+.agent-orch/
+
+# Shawarma worktrees scratch area
+.worktrees/
