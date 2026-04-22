@@ -1,0 +1,343 @@
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { applyManifest, removeFromLockfile } from './installer.js';
+import { emptyLockfile } from './lockfile.js';
+import type { Lockfile, ResolvedManifest } from './types.js';
+
+let scratch: string;
+let claudeHome: string;
+let sourceRoot: string;
+
+beforeEach(async () => {
+  scratch = await fs.mkdtemp(join(tmpdir(), 'ccpp-install-'));
+  claudeHome = join(scratch, 'claude');
+  sourceRoot = join(scratch, 'source');
+  await fs.mkdir(claudeHome, { recursive: true });
+  await fs.mkdir(sourceRoot, { recursive: true });
+});
+
+afterEach(async () => {
+  await fs.rm(scratch, { recursive: true, force: true });
+});
+
+async function writeSourceFile(relPath: string, content: string): Promise<string> {
+  const abs = join(sourceRoot, relPath);
+  await fs.mkdir(dirname(abs), { recursive: true });
+  await fs.writeFile(abs, content);
+  return abs;
+}
+
+function buildManifest(overrides: Partial<ResolvedManifest> = {}): ResolvedManifest {
+  return {
+    sourceDir: sourceRoot,
+    standaloneCommands: [],
+    plugins: [],
+    ...overrides,
+  };
+}
+
+async function read(path: string): Promise<string> {
+  return fs.readFile(path, 'utf8');
+}
+
+async function listDir(path: string): Promise<string[]> {
+  try {
+    return (await fs.readdir(path)).sort();
+  } catch {
+    return [];
+  }
+}
+
+describe('applyManifest', () => {
+  it('writes standalone commands, plugin commands (flat), and skill trees into claudeHome', async () => {
+    const helloSrc = await writeSourceFile('commands/hello.md', 'hello body');
+    const prSrc = await writeSourceFile('plugins/pr/commands/pr.md', 'pr body');
+    const skillMd = await writeSourceFile('plugins/pr/skills/pr-review/SKILL.md', 'skill body');
+    const skillRef = await writeSourceFile(
+      'plugins/pr/skills/pr-review/references/style.md',
+      'style notes',
+    );
+
+    const lockfile: Lockfile = emptyLockfile();
+    const result = await applyManifest({
+      manifest: buildManifest({
+        standaloneCommands: [{ name: 'hello', sourceFile: helloSrc }],
+        plugins: [
+          {
+            name: 'pr',
+            version: '0.1.0',
+            description: 'pr plugin',
+            dir: join(sourceRoot, 'plugins/pr'),
+            commands: [{ name: 'pr', sourceFile: prSrc }],
+            skills: [
+              {
+                name: 'pr-review',
+                sourceDir: join(sourceRoot, 'plugins/pr/skills/pr-review'),
+                files: [skillMd, skillRef],
+              },
+            ],
+          },
+        ],
+      }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    });
+
+    expect(result.installed.sort()).toEqual(
+      [
+        join(claudeHome, 'commands/hello.md'),
+        join(claudeHome, 'commands/pr.md'),
+        join(claudeHome, 'skills/pr-review/SKILL.md'),
+        join(claudeHome, 'skills/pr-review/references/style.md'),
+      ].sort(),
+    );
+    expect(result.updated).toEqual([]);
+    expect(result.unchanged).toEqual([]);
+    expect(result.conflicts).toEqual([]);
+    expect(result.backups).toEqual([]);
+
+    expect(await read(join(claudeHome, 'commands/hello.md'))).toBe('hello body');
+    expect(await read(join(claudeHome, 'commands/pr.md'))).toBe('pr body');
+    expect(await read(join(claudeHome, 'skills/pr-review/SKILL.md'))).toBe('skill body');
+    expect(await read(join(claudeHome, 'skills/pr-review/references/style.md'))).toBe('style notes');
+
+    const entry = lockfile.installed[join(claudeHome, 'commands/hello.md')]!;
+    expect(entry.sourceUrl).toBe('https://x/one.git');
+    expect(entry.sourceSha).toBe('sha-1');
+    expect(entry.sourcePath).toBe(join('commands', 'hello.md'));
+    expect(entry.installedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('is a no-op on a clean re-install (everything reported as unchanged)', async () => {
+    const helloSrc = await writeSourceFile('commands/hello.md', 'hello body');
+    const lockfile: Lockfile = emptyLockfile();
+    const opts = {
+      manifest: buildManifest({ standaloneCommands: [{ name: 'hello', sourceFile: helloSrc }] }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    };
+
+    await applyManifest(opts);
+    const second = await applyManifest(opts);
+
+    expect(second.installed).toEqual([]);
+    expect(second.updated).toEqual([]);
+    expect(second.backups).toEqual([]);
+    expect(second.unchanged).toEqual([join(claudeHome, 'commands/hello.md')]);
+  });
+
+  it('backs up and overwrites a destination whose bytes differ from the source', async () => {
+    const helloSrc = await writeSourceFile('commands/hello.md', 'v1');
+    const lockfile: Lockfile = emptyLockfile();
+    const opts = {
+      manifest: buildManifest({ standaloneCommands: [{ name: 'hello', sourceFile: helloSrc }] }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    };
+    await applyManifest(opts);
+
+    // Upstream advances.
+    await fs.writeFile(helloSrc, 'v2');
+    const second = await applyManifest({ ...opts, sourceSha: 'sha-2' });
+
+    const destPath = join(claudeHome, 'commands/hello.md');
+    expect(second.updated).toEqual([destPath]);
+    expect(second.backups).toHaveLength(1);
+    expect(second.backups[0]!).toMatch(/hello\.md\.bak\.\d{4}-\d{2}-\d{2}T/);
+    expect(second.backups[0]!).not.toContain(':');
+    expect(await read(destPath)).toBe('v2');
+    expect(await read(second.backups[0]!)).toBe('v1');
+
+    expect(lockfile.installed[destPath]!.sourceSha).toBe('sha-2');
+  });
+
+  it('returns a Conflict (no write) when a second source wants the same destination', async () => {
+    const srcA = await writeSourceFile('a/commands/git-commit.md', 'from-A');
+    const srcB = await writeSourceFile('b/commands/git-commit.md', 'from-B');
+    const lockfile: Lockfile = emptyLockfile();
+
+    await applyManifest({
+      manifest: buildManifest({ standaloneCommands: [{ name: 'git-commit', sourceFile: srcA }] }),
+      sourceUrl: 'https://a.git',
+      sourceSha: 'a1',
+      claudeHome,
+      lockfile,
+    });
+
+    const second = await applyManifest({
+      manifest: buildManifest({ standaloneCommands: [{ name: 'git-commit', sourceFile: srcB }] }),
+      sourceUrl: 'https://b.git',
+      sourceSha: 'b1',
+      claudeHome,
+      lockfile,
+    });
+
+    const destPath = join(claudeHome, 'commands/git-commit.md');
+    expect(second.conflicts).toHaveLength(1);
+    expect(second.conflicts[0]).toEqual({
+      destPath,
+      currentSourceUrl: 'https://a.git',
+      incomingSourceUrl: 'https://b.git',
+      name: 'git-commit',
+    });
+    expect(second.installed).toEqual([]);
+    expect(second.updated).toEqual([]);
+    expect(second.backups).toEqual([]);
+    // Disk still has A's content, lockfile still points at A.
+    expect(await read(destPath)).toBe('from-A');
+    expect(lockfile.installed[destPath]!.sourceUrl).toBe('https://a.git');
+  });
+
+  it("resolves a collision when preferredSources picks the incoming source (preferred wins, backup created)", async () => {
+    const srcA = await writeSourceFile('a/commands/git-commit.md', 'from-A');
+    const srcB = await writeSourceFile('b/commands/git-commit.md', 'from-B');
+    const lockfile: Lockfile = emptyLockfile();
+
+    await applyManifest({
+      manifest: buildManifest({ standaloneCommands: [{ name: 'git-commit', sourceFile: srcA }] }),
+      sourceUrl: 'https://a.git',
+      sourceSha: 'a1',
+      claudeHome,
+      lockfile,
+    });
+
+    const second = await applyManifest({
+      manifest: buildManifest({ standaloneCommands: [{ name: 'git-commit', sourceFile: srcB }] }),
+      sourceUrl: 'https://b.git',
+      sourceSha: 'b1',
+      claudeHome,
+      lockfile,
+      preferredSources: { 'git-commit': 'https://b.git' },
+    });
+
+    const destPath = join(claudeHome, 'commands/git-commit.md');
+    expect(second.conflicts).toEqual([]);
+    expect(second.updated).toEqual([destPath]);
+    expect(second.backups).toHaveLength(1);
+    expect(await read(destPath)).toBe('from-B');
+    expect(lockfile.installed[destPath]!.sourceUrl).toBe('https://b.git');
+  });
+
+  it("resolves a collision when preferredSources picks the existing source (incoming silently skipped)", async () => {
+    const srcA = await writeSourceFile('a/commands/git-commit.md', 'from-A');
+    const srcB = await writeSourceFile('b/commands/git-commit.md', 'from-B');
+    const lockfile: Lockfile = emptyLockfile();
+
+    await applyManifest({
+      manifest: buildManifest({ standaloneCommands: [{ name: 'git-commit', sourceFile: srcA }] }),
+      sourceUrl: 'https://a.git',
+      sourceSha: 'a1',
+      claudeHome,
+      lockfile,
+    });
+
+    const second = await applyManifest({
+      manifest: buildManifest({ standaloneCommands: [{ name: 'git-commit', sourceFile: srcB }] }),
+      sourceUrl: 'https://b.git',
+      sourceSha: 'b1',
+      claudeHome,
+      lockfile,
+      preferredSources: { 'git-commit': 'https://a.git' },
+    });
+
+    const destPath = join(claudeHome, 'commands/git-commit.md');
+    expect(second.conflicts).toEqual([]);
+    expect(second.installed).toEqual([]);
+    expect(second.updated).toEqual([]);
+    expect(second.unchanged).toEqual([]);
+    expect(second.backups).toEqual([]);
+    expect(await read(destPath)).toBe('from-A');
+    expect(lockfile.installed[destPath]!.sourceUrl).toBe('https://a.git');
+  });
+});
+
+describe('removeFromLockfile', () => {
+  it('moves each installed file to a .bak.<timestamp> and drops lockfile entries', async () => {
+    const helloSrc = await writeSourceFile('commands/hello.md', 'hello');
+    const skillMd = await writeSourceFile('plugins/p/skills/s/SKILL.md', 'skill');
+    const lockfile: Lockfile = emptyLockfile();
+    lockfile.sources['https://x/one.git'] = {
+      sha: 'sha-1',
+      ref: 'main',
+      lastSync: '2026-04-22T00:00:00.000Z',
+    };
+
+    await applyManifest({
+      manifest: buildManifest({
+        standaloneCommands: [{ name: 'hello', sourceFile: helloSrc }],
+        plugins: [
+          {
+            name: 'p',
+            version: '0.1.0',
+            description: 'p',
+            dir: join(sourceRoot, 'plugins/p'),
+            commands: [],
+            skills: [
+              {
+                name: 's',
+                sourceDir: join(sourceRoot, 'plugins/p/skills/s'),
+                files: [skillMd],
+              },
+            ],
+          },
+        ],
+      }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    });
+
+    const result = await removeFromLockfile({
+      name: 'https://x/one.git',
+      claudeHome,
+      lockfile,
+    });
+
+    expect(result.removed.sort()).toEqual(
+      [join(claudeHome, 'commands/hello.md'), join(claudeHome, 'skills/s/SKILL.md')].sort(),
+    );
+    expect(result.backups).toHaveLength(2);
+    for (const bak of result.backups) {
+      expect(bak).toMatch(/\.bak\.\d{4}-\d{2}-\d{2}T/);
+      expect(bak).not.toContain(':');
+      await expect(fs.access(bak)).resolves.toBeUndefined();
+    }
+    const commandsRemaining = await listDir(join(claudeHome, 'commands'));
+    expect(commandsRemaining.every((f) => f.includes('.bak.'))).toBe(true);
+    await expect(fs.access(join(claudeHome, 'commands/hello.md'))).rejects.toThrow();
+    expect(lockfile.installed).toEqual({});
+    expect(lockfile.sources).toEqual({});
+  });
+
+  it('silently skips files already gone from disk but still drops lockfile entries', async () => {
+    const helloSrc = await writeSourceFile('commands/hello.md', 'hello');
+    const lockfile: Lockfile = emptyLockfile();
+    await applyManifest({
+      manifest: buildManifest({ standaloneCommands: [{ name: 'hello', sourceFile: helloSrc }] }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    });
+    await fs.rm(join(claudeHome, 'commands/hello.md'));
+
+    const result = await removeFromLockfile({
+      name: 'https://x/one.git',
+      claudeHome,
+      lockfile,
+    });
+
+    expect(result.removed).toEqual([join(claudeHome, 'commands/hello.md')]);
+    expect(result.backups).toEqual([]);
+    expect(lockfile.installed).toEqual({});
+  });
+});

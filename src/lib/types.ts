@@ -118,28 +118,57 @@ export interface PluginJson {
 }
 
 /**
- * The `ccpp.lock` file — pins every manifest source to a concrete commit
- * and records the integrity metadata needed to detect drift.
+ * The `ccpp.lock.json` file — pins every synced source to a concrete commit
+ * and records every file that has been written into `~/.claude/` so the next
+ * sync can diff, skip, overwrite, or uninstall correctly.
  */
 export interface Lockfile {
   /** Lockfile schema version. */
-  version: number;
-  /** Entries keyed by source short alias. */
-  entries: Record<string, LockEntry>;
-  /** ISO-8601 timestamp when the lockfile was last written. */
-  generatedAt: string;
+  version: 1;
+  /** Per-source pin, keyed by git URL. */
+  sources: Record<string, LockSourceEntry>;
+  /** Per-file install record, keyed by destination path under the Claude home. */
+  installed: Record<string, LockInstalledEntry>;
 }
 
 /**
- * A single pinned entry inside a {@link Lockfile}.
+ * A single pinned source inside a {@link Lockfile}.
  */
-export interface LockEntry {
-  /** Source URL. */
-  url: string;
-  /** Pinned commit SHA. */
-  commit: string;
-  /** Optional ref originally requested (for audit / human readability). */
-  ref?: string;
-  /** Optional content-hash of the fetched tree for integrity checks. */
-  integrity?: string;
+export interface LockSourceEntry {
+  /** Commit SHA the source is pinned to. */
+  sha: string;
+  /** Human-readable ref (branch or tag) at the time of the last sync. */
+  ref: string;
+  /** ISO-8601 timestamp when the source was last synced. */
+  lastSync: string;
+}
+
+/**
+ * A single installed destination inside a {@link Lockfile}.
+ * `destPath` is the lockfile key; this is the value.
+ */
+export interface LockInstalledEntry {
+  /** URL of the source this file came from. */
+  sourceUrl: string;
+  /** Path of the file within the source repo (relative to its root). */
+  sourcePath: string;
+  /** SHA of the source at the time of install, for drift detection. */
+  sourceSha: string;
+  /** ISO-8601 timestamp when the file was installed. */
+  installedAt: string;
+}
+
+/**
+ * A collision surfaced when two sources attempt to install the same
+ * destination. The CLI layer asks the user to resolve via `--prefer <source>`.
+ */
+export interface Conflict {
+  /** Absolute destination path under the Claude home. */
+  destPath: string;
+  /** URL of the source currently owning `destPath` per the lockfile. */
+  currentSourceUrl: string;
+  /** URL of the source attempting to overwrite it. */
+  incomingSourceUrl: string;
+  /** Short name (command or skill) that collided. */
+  name: string;
 }
