@@ -92,25 +92,60 @@ describe('ccpp config list', () => {
 });
 
 describe('ccpp config set / get', () => {
-  it('set persists to ccpp.config.json and get reads it back', async () => {
+  it('set syncPolicy pinned persists without requiring --auto-accept', async () => {
     const init = await cli(['init'], { cwd: scratch });
     expect(init.code).toBe(0);
 
-    const set = await cli(['config', 'set', 'syncPolicy', 'latest'], { cwd: scratch });
+    const set = await cli(['config', 'set', 'syncPolicy', 'pinned'], { cwd: scratch });
     expect(set.code).toBe(0);
-    expect(set.stdout).toMatch(/syncPolicy.*latest/);
+    expect(set.stdout).toMatch(/syncPolicy.*pinned/);
+
+    const raw = await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    expect(parsed.syncPolicy).toBe('pinned');
+  });
+
+  it('set syncPolicy latest --auto-accept persists value AND policyAcknowledgedAt', async () => {
+    const init = await cli(['init'], { cwd: scratch });
+    expect(init.code).toBe(0);
+
+    const set = await cli(
+      ['config', 'set', 'syncPolicy', 'latest', '--auto-accept'],
+      { cwd: scratch },
+    );
+    expect(set.code).toBe(0);
 
     const raw = await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8');
     const parsed = JSON.parse(raw);
     expect(parsed.syncPolicy).toBe('latest');
+    expect(parsed.policyAcknowledgedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+
+    // Subsequent policy set/reset flips don't re-prompt — ack is sticky.
+    const roundtrip = await cli(['config', 'set', 'syncPolicy', 'pinned'], { cwd: scratch });
+    expect(roundtrip.code).toBe(0);
+    const back = await cli(['config', 'set', 'syncPolicy', 'latest'], { cwd: scratch });
+    expect(back.code).toBe(0);
 
     const get = await cli(['config', 'get', 'syncPolicy'], { cwd: scratch });
     expect(get.code).toBe(0);
     expect(get.stdout.trim()).toBe('latest');
+  });
 
-    const getJson = await cli(['config', 'get', 'syncPolicy', '--json'], { cwd: scratch });
-    expect(getJson.code).toBe(0);
-    expect(JSON.parse(getJson.stdout)).toEqual({ key: 'syncPolicy', value: 'latest' });
+  it('set autoAccept true --auto-accept persists value AND autoAcceptAcknowledgedAt', async () => {
+    await cli(['init'], { cwd: scratch });
+    const set = await cli(
+      ['config', 'set', 'autoAccept', 'true', '--auto-accept'],
+      { cwd: scratch },
+    );
+    expect(set.code).toBe(0);
+
+    const parsed = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
+    expect(parsed.autoAccept).toBe(true);
+    expect(parsed.autoAcceptAcknowledgedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
   });
 });
 
@@ -133,5 +168,21 @@ describe('ccpp config error paths', () => {
     const { code, stderr } = await cli(['config', 'do-a-dance'], { cwd: scratch });
     expect(code).toBe(1);
     expect(stderr).toMatch(/unknown action/i);
+  });
+
+  it('set syncPolicy latest without --auto-accept in a non-TTY exits 1', async () => {
+    const { code, stderr } = await cli(['config', 'set', 'syncPolicy', 'latest'], {
+      cwd: scratch,
+    });
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/requires confirmation.*--auto-accept|interactive terminal/i);
+  });
+
+  it('set autoAccept true without --auto-accept in a non-TTY exits 1', async () => {
+    const { code, stderr } = await cli(['config', 'set', 'autoAccept', 'true'], {
+      cwd: scratch,
+    });
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/requires confirmation.*--auto-accept|interactive terminal/i);
   });
 });

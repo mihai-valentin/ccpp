@@ -1,4 +1,6 @@
 import {
+  type AckKind,
+  applyConfigSet,
   type CcppConfig,
   CONFIG_FILENAME,
   configExists,
@@ -6,11 +8,11 @@ import {
   getConfigValue,
   listConfig,
   readConfig,
+  requiresAcknowledgement,
   resetConfigValue,
-  setConfigValue,
   writeConfig,
 } from '../lib/config.js';
-import { dim, green } from '../lib/term.js';
+import { dim, green, promptYesNo } from '../lib/term.js';
 
 export type ConfigAction = 'get' | 'set' | 'reset' | 'list';
 
@@ -21,6 +23,8 @@ export interface RunConfigOpts {
   configPath: string;
   json: boolean;
   quiet: boolean;
+  /** `--auto-accept` on `config set`: skip first-enable prompt and record ack. */
+  autoAccept?: boolean;
 }
 
 /**
@@ -42,7 +46,19 @@ export async function runConfig(opts: RunConfigOpts): Promise<void> {
       if (opts.value === undefined) {
         throw new Error('ccpp config set: missing <value> argument');
       }
-      setConfigValue(config, opts.key, opts.value);
+      const ackKind = requiresAcknowledgement(config, opts.key, opts.value);
+      if (ackKind !== null && opts.autoAccept !== true && !process.stdin.isTTY) {
+        throw new Error(
+          `set ${opts.key} requires confirmation; pass --auto-accept or run from an interactive terminal.`,
+        );
+      }
+      const setOpts: Parameters<typeof applyConfigSet>[3] = {};
+      if (opts.autoAccept === true) {
+        setOpts.autoAcceptAcks = true;
+      } else if (ackKind !== null) {
+        setOpts.confirm = (_kind: AckKind, message: string) => promptYesNo(message);
+      }
+      await applyConfigSet(config, opts.key, opts.value, setOpts);
       await writeConfig(opts.configPath, config);
       return emitSet(config, opts.key, opts);
     }

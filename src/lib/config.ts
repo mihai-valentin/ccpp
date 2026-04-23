@@ -33,6 +33,15 @@ export interface ConfigEntry {
   isDefault: boolean;
 }
 
+/** Which risk acknowledgement a `set` write would trigger. */
+export type AckKind = 'policy' | 'autoAccept';
+
+export const POLICY_LATEST_WARNING =
+  'Switching to syncPolicy:latest means any commit pushed to this source will be installed into ~/.claude/ on your next sync. This includes changes from compromised repos, leaked credentials, or former-contributor access. Continue? [y/N]';
+
+export const AUTO_ACCEPT_WARNING =
+  'Enabling autoAccept means ccpp will apply changes without asking you to review them first. You lose the diff-preview confirmation step that guards your ~/.claude/ state. Continue? [y/N]';
+
 export function emptyConfig(): CcppConfig {
   return { version: 1, sources: [], scope: 'user' };
 }
@@ -272,6 +281,84 @@ export function setConfigValue(config: CcppConfig, key: string, rawValue: string
       src.policy = coerceSyncPolicy(key, rawValue);
       return;
     }
+  }
+}
+
+/**
+ * Returns which first-enable acknowledgement (if any) a `set <key> <value>`
+ * would trigger on this config. Null means no warning required — either the
+ * value isn't risky, or the ack has already been recorded.
+ */
+export function requiresAcknowledgement(
+  config: CcppConfig,
+  key: string,
+  rawValue: string,
+): AckKind | null {
+  const parsed = parseKey(key);
+  if (!parsed) return null;
+  if (
+    (parsed.kind === 'syncPolicy' || parsed.kind === 'sourcePolicy') &&
+    rawValue.trim().toLowerCase() === 'latest' &&
+    config.policyAcknowledgedAt === undefined
+  ) {
+    return 'policy';
+  }
+  if (
+    parsed.kind === 'autoAccept' &&
+    rawValue.trim().toLowerCase() === 'true' &&
+    config.autoAcceptAcknowledgedAt === undefined
+  ) {
+    return 'autoAccept';
+  }
+  return null;
+}
+
+export interface ApplyConfigSetOptions {
+  /** Invoked when a risky write needs user acknowledgement. Return true to proceed. */
+  confirm?: (kind: AckKind, message: string) => Promise<boolean> | boolean;
+  /** Skip the prompt and record the acknowledgement as if the user confirmed. */
+  autoAcceptAcks?: boolean;
+  /** Clock override for deterministic tests. Defaults to new Date().toISOString(). */
+  now?: () => string;
+}
+
+/**
+ * Apply `set <key> <value>` with the first-enable acknowledgement gate.
+ * Records `policyAcknowledgedAt` / `autoAcceptAcknowledgedAt` on confirm.
+ * Throws (and leaves `config` untouched apart from no-op writes) if the user
+ * declines, or if the write needs confirmation and no path to obtain it was
+ * supplied (`confirm` unset AND `autoAcceptAcks` false).
+ */
+export async function applyConfigSet(
+  config: CcppConfig,
+  key: string,
+  rawValue: string,
+  opts: ApplyConfigSetOptions = {},
+): Promise<void> {
+  const ackKind = requiresAcknowledgement(config, key, rawValue);
+  if (ackKind !== null) {
+    let confirmed = false;
+    if (opts.autoAcceptAcks === true) {
+      confirmed = true;
+    } else if (opts.confirm) {
+      const message = ackKind === 'policy' ? POLICY_LATEST_WARNING : AUTO_ACCEPT_WARNING;
+      confirmed = await opts.confirm(ackKind, message);
+    } else {
+      throw new Error(
+        `Setting "${key}" to ${JSON.stringify(rawValue)} requires first-enable acknowledgement, but no confirm handler was supplied.`,
+      );
+    }
+    if (!confirmed) {
+      throw new Error(`Aborted: "${key}" change not confirmed.`);
+    }
+  }
+
+  setConfigValue(config, key, rawValue);
+
+  if (ackKind !== null) {
+    const nowFn = opts.now ?? (() => new Date().toISOString());
+    if (ackKind === 'policy') config.policyAcknowledgedAt = nowFn();
+    else config.autoAcceptAcknowledgedAt = nowFn();
   }
 }
 

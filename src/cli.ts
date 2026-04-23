@@ -318,7 +318,7 @@ async function doConfig(
   action: string,
   key: string | undefined,
   value: string | undefined,
-  opts: CommonOpts,
+  opts: CommonOpts & { autoAccept?: boolean },
 ): Promise<void> {
   const common = commonPaths(opts);
   const valid: ConfigAction[] = ['get', 'set', 'reset', 'list'];
@@ -336,6 +336,7 @@ async function doConfig(
     };
     if (key !== undefined) runOpts.key = key;
     if (value !== undefined) runOpts.value = value;
+    if (opts.autoAccept === true) runOpts.autoAccept = true;
     await runConfig(runOpts);
   } catch (err) {
     throw new UserError((err as Error).message);
@@ -538,12 +539,13 @@ async function main(argv: string[]): Promise<void> {
   attachCommonOptions(
     cli
       .command('config <action> [key] [value]', 'Manage ccpp configuration')
+      .option('--auto-accept', 'On `set`, skip the first-enable warning and record the acknowledgement')
       .action(
         async (
           action: string,
           key: string | undefined,
           value: string | undefined,
-          opts: CommonOpts,
+          opts: CommonOpts & { autoAccept?: boolean },
         ) => {
           await doConfig(action, key, value, opts);
         },
