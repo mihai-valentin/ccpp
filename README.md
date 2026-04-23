@@ -26,14 +26,14 @@ Requirements:
 ## Quick Start
 
 ```bash
-# 1. In your working directory (or a fresh one), create a ccpp.json manifest
+# 1. In your working directory (or a fresh one), create a ccpp.config.json manifest
 npx ccpp init
 
 # 2. Install one or more source repos (private or public)
 npx ccpp install git@bitbucket.org:your-org/ai-plugins-dev.git
 npx ccpp install https://github.com/your-org/claude-plugins.git
 
-# 3. Later — sync all sources to their latest HEAD (or the pinned commit in ccpp.lock)
+# 3. Later — sync all sources to the commit pinned in ccpp.lock.json (with a diff-preview prompt)
 npx ccpp sync
 
 # 4. See what's installed
@@ -49,7 +49,7 @@ ccpp reads each source's `.claude-plugin/marketplace.json` — the same manifest
 
 Content is written into Claude Code's native auto-discovery paths under `~/.claude/`. That means Claude Code picks up changes on its own — no `/reload-plugins` or restart required. Short command names (e.g. `/git-commit`) are preserved; ccpp does **not** rewrite them to namespaced forms.
 
-Every `ccpp install` and `ccpp sync` updates `ccpp.lock`, pinning each source to the exact commit SHA that was materialised on disk. Re-running `ccpp sync` without `--update` installs the pinned commits; with `--update` it fetches newer HEADs and rewrites the lock. That means teammates checking out the repo get byte-identical skill/command content.
+Every `ccpp install` and `ccpp sync` updates `ccpp.lock.json`, pinning each source to the exact commit SHA that was materialised on disk. The lockfile is what makes teammate installs byte-identical. What governs *when* upstream changes land — and whether you see a diff-preview prompt before they do — is the per-source `syncPolicy` plus `autoAccept` flag, both introduced in v0.1.1 and documented in the [Sync policy](#sync-policy) and [Auto-update](#auto-update-via-sessionstart-hook) sections below. By default (`syncPolicy: pinned`, `autoAccept: false`), every `ccpp sync` shows you an added / modified / removed summary and asks `[y/N]` before touching `~/.claude/`.
 
 ## Sync policy
 
@@ -57,7 +57,7 @@ ccpp v0.1.1 introduces a **per-source sync policy** so you can choose, per sourc
 
 | Policy | Behaviour on `ccpp sync` |
 |--------|--------------------------|
-| `pinned` *(default)* | Resolve the commit recorded in `ccpp.lock`. Upstream changes require an explicit `ccpp sync --prefer-latest` to land. Safe default — teammates never get surprised by a silent upstream bump. |
+| `pinned` *(default)* | Resolve the commit recorded in `ccpp.lock.json`. Upstream changes require an explicit `ccpp sync --prefer-latest` to land. Safe default — teammates never get surprised by a silent upstream bump. |
 | `latest` | Fetch the configured ref's current tip, apply it, and advance the lockfile. Pair with `autoAccept: true` + the SessionStart hook to get a true auto-update experience. |
 
 Set the global policy and per-source overrides via `ccpp config`:
@@ -161,7 +161,7 @@ npx ccpp install git@bitbucket.org:your-org/ai-plugins-dev.git
 
 ### Multi-source setup
 
-Combine an in-house repo with a public one. `ccpp.json` holds both; `ccpp sync` resolves all of them in one pass.
+Combine an in-house repo with a public one. `ccpp.config.json` holds both; `ccpp sync` resolves all of them in one pass.
 
 ```bash
 npx ccpp install git@bitbucket.org:your-org/internal.git
@@ -177,7 +177,7 @@ Try a public plugin repo without committing it to the project manifest:
 npx ccpp install https://github.com/example/some-plugin.git --scratch
 ```
 
-`--scratch` materialises into a throw-away sandbox under `~/.ccpp/scratch/` and never touches `ccpp.json` / `ccpp.lock`.
+`--scratch` materialises into a throw-away sandbox under `~/.ccpp/scratch/` and never touches `ccpp.config.json` / `ccpp.lock.json`.
 
 ## Troubleshooting
 
@@ -197,7 +197,7 @@ If two sources both define `/git-commit`, ccpp refuses the install and exits wit
 npx ccpp install <url> --prefer <source-name>
 ```
 
-…which records the preference in `ccpp.json` so subsequent syncs are deterministic.
+…which records the preference in `ccpp.config.json` so subsequent syncs are deterministic.
 
 ### Cache reset
 
@@ -217,3 +217,30 @@ If you ran `ccpp install-hook` but a new Claude Code session doesn't seem to be 
 3. **What does ccpp think happened?** `ccpp status` renders the last-sync state per source and flags any skips / errors from the last hook pass. If status says everything succeeded but you're not seeing the upstream change, check that `syncPolicy` really is `latest` for that source (`ccpp config get sources.<url>.policy`).
 
 See [`docs/exit-codes.md`](./docs/exit-codes.md) for the full exit-code reference.
+
+## Development
+
+Everything a contributor or CI pipeline needs is exposed through `make`:
+
+```bash
+make help          # list all targets with one-line docs
+make ci            # install + build + typecheck + test + pack-check
+make verify        # ci + bash smoke test + npm audit (the full local gate)
+make smoke         # build + scripts/smoke.sh (end-to-end against a local git fixture)
+make pack-check    # npm pack --dry-run — confirms the published tarball shape
+make release-dry   # verify + npm publish --dry-run (rehearsal, no upload)
+make release       # verify + publish (refuses on a dirty tree or placeholder URL)
+```
+
+`make ci` is the single command a CI runner (GitHub Actions, Bitbucket Pipelines, self-hosted) needs to invoke on every push. Under `CI=1` it uses `npm ci` for lockfile-reproducible installs; locally it uses `npm install`. The `lint` target runs `biome check` but is deliberately **not** in the CI gate — the codebase has some existing style-advisory drift (`noNonNullAssertion`, `useLiteralKeys`) that will be cleaned up separately.
+
+Fresh-clone bootstrap:
+
+```bash
+git clone <remote-url> ccpp
+cd ccpp
+make install
+make verify
+```
+
+Test layout — unit tests live next to the source (`src/**/*.test.ts`) and CLI / end-to-end tests in `tests/` (including `tests/integration/` for bare-git-fixture-driven flows). All 158 tests should run in under 10 seconds.
