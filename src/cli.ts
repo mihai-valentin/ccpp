@@ -3,7 +3,10 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { cac } from 'cac';
 import { type ConfigAction, runConfig } from './commands/config.js';
+import { type HookScope, runInstallHook } from './commands/install-hook.js';
+import { runStatus } from './commands/status.js';
 import { resolveOverride, runSync } from './commands/sync.js';
+import { runUninstallHook } from './commands/uninstall-hook.js';
 import type { CcppConfig, ConfigSource } from './lib/config.js';
 import {
   CONFIG_FILENAME,
@@ -224,6 +227,7 @@ async function doSync(
     pinned?: boolean;
     autoAccept?: boolean;
     verbose?: boolean;
+    trigger?: string;
   },
 ): Promise<void> {
   const common = commonPaths(opts);
@@ -242,7 +246,52 @@ async function doSync(
   if (override !== undefined) runOpts.override = override;
   if (opts.autoAccept === true) runOpts.autoAccept = true;
   if (opts.verbose === true) runOpts.verbose = true;
+  if (opts.trigger !== undefined) {
+    if (opts.trigger !== 'manual' && opts.trigger !== 'hook') {
+      throw new UserError(
+        `ccpp sync: --trigger must be 'manual' or 'hook' (got ${JSON.stringify(opts.trigger)}).`,
+      );
+    }
+    runOpts.trigger = opts.trigger;
+  }
   await runSync(runOpts);
+}
+
+async function doInstallHook(
+  opts: CommonOpts & { project?: boolean; chain?: boolean; force?: boolean },
+): Promise<void> {
+  const common = commonPaths(opts);
+  const scope: HookScope = opts.project === true ? 'project' : 'user';
+  const runOpts: Parameters<typeof runInstallHook>[0] = {
+    scope,
+    claudeHome: common.claudeHome,
+    json: common.json,
+    quiet: common.quiet,
+  };
+  if (opts.chain === true) runOpts.chain = true;
+  if (opts.force === true) runOpts.force = true;
+  await runInstallHook(runOpts);
+}
+
+async function doUninstallHook(opts: CommonOpts & { project?: boolean }): Promise<void> {
+  const common = commonPaths(opts);
+  const scope: HookScope = opts.project === true ? 'project' : 'user';
+  await runUninstallHook({
+    scope,
+    claudeHome: common.claudeHome,
+    json: common.json,
+    quiet: common.quiet,
+  });
+}
+
+async function doStatus(opts: CommonOpts): Promise<void> {
+  const common = commonPaths(opts);
+  await runStatus({
+    configPath: common.configPath,
+    lockfilePath: common.lockfilePath,
+    json: common.json,
+    quiet: common.quiet,
+  });
 }
 
 async function doList(opts: CommonOpts): Promise<void> {
@@ -523,6 +572,7 @@ async function main(argv: string[]): Promise<void> {
       .option('--update', 'Deprecated alias for --prefer-latest')
       .option('--auto-accept', 'Skip the diff-preview prompt for this run')
       .option('--verbose', 'Expand the diff-preview summary to per-file paths')
+      .option('--trigger <kind>', '(internal) Tag log entries with manual|hook — used by the SessionStart hook')
       .action(
         async (
           opts: CommonOpts & {
@@ -531,6 +581,7 @@ async function main(argv: string[]): Promise<void> {
             pinned?: boolean;
             autoAccept?: boolean;
             verbose?: boolean;
+            trigger?: string;
           },
         ) => {
           await doSync(opts);
@@ -548,6 +599,34 @@ async function main(argv: string[]): Promise<void> {
     cli.command('uninstall <name>', 'Uninstall a source (by URL or repo name)').action(
       async (name: string, opts: CommonOpts) => {
         await doUninstall(name, opts);
+      },
+    ),
+  );
+
+  attachCommonOptions(
+    cli
+      .command('install-hook', 'Install the Claude Code SessionStart hook (runs `ccpp sync` at session start)')
+      .option('--project', 'Write to ./.claude/settings.json instead of user scope')
+      .option('--chain', 'Append ccpp after an existing SessionStart hook')
+      .option('--force', 'Replace any existing SessionStart hooks with ccpp')
+      .action(async (opts: CommonOpts & { project?: boolean; chain?: boolean; force?: boolean }) => {
+        await doInstallHook(opts);
+      }),
+  );
+
+  attachCommonOptions(
+    cli
+      .command('uninstall-hook', "Remove ccpp's SessionStart hook entry from settings.json")
+      .option('--project', 'Target ./.claude/settings.json instead of user scope')
+      .action(async (opts: CommonOpts & { project?: boolean }) => {
+        await doUninstallHook(opts);
+      }),
+  );
+
+  attachCommonOptions(
+    cli.command('status', 'Show per-source sync state and recent log entries').action(
+      async (opts: CommonOpts) => {
+        await doStatus(opts);
       },
     ),
   );

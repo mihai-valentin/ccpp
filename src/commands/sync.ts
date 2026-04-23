@@ -9,6 +9,7 @@ import { type Changeset, computeChangeset, hasChanges } from '../lib/diff.js';
 import { cloneOrUpdate } from '../lib/git.js';
 import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
+import { appendSyncLog, type SyncOutcome, type SyncTrigger } from '../lib/log.js';
 import { parseManifest } from '../lib/manifest.js';
 import { dim, green, promptYesNo, yellow } from '../lib/term.js';
 import type { Conflict } from '../lib/types.js';
@@ -50,6 +51,10 @@ export interface RunSyncOpts {
   autoAccept?: boolean;
   /** `--verbose` CLI flag — expand per-file paths in the diff summary. */
   verbose?: boolean;
+  /** `--trigger` CLI flag — tags log entries. Defaults to 'manual'. */
+  trigger?: SyncTrigger;
+  /** Override the sync.log path (tests + non-default CCPP_HOME). */
+  logPath?: string;
   /**
    * DI hook for tests — swap the stdin-backed prompt for a deterministic one.
    * Called only when the decision-tree would otherwise prompt interactively
@@ -152,6 +157,7 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
   const allConflicts: Conflict[] = [];
   const isTTY = opts.isTTY ?? Boolean(process.stdin.isTTY);
   const autoAcceptEffective = opts.autoAccept === true || config.autoAccept === true;
+  const trigger: SyncTrigger = opts.trigger ?? 'manual';
 
   for (const source of config.sources) {
     const policy = effectivePolicy(source, config, opts.override);
@@ -164,12 +170,35 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
     try {
       synced = await cloneOrUpdate(source.url, cloneOpts);
     } catch (err) {
+      await appendSyncLog(
+        {
+          timestamp: new Date().toISOString(),
+          trigger,
+          outcome: 'error',
+          sourceUrl: source.url,
+          error: (err as Error).message,
+        },
+        opts.logPath,
+      );
       throw new EnvError(`${source.url}: ${(err as Error).message}`);
     }
 
-    const manifest = await parseManifest(synced.localPath).catch((err: Error) => {
-      throw new EnvError(`${source.url}: ${err.message}`);
-    });
+    let manifest: Awaited<ReturnType<typeof parseManifest>>;
+    try {
+      manifest = await parseManifest(synced.localPath);
+    } catch (err) {
+      await appendSyncLog(
+        {
+          timestamp: new Date().toISOString(),
+          trigger,
+          outcome: 'error',
+          sourceUrl: source.url,
+          error: (err as Error).message,
+        },
+        opts.logPath,
+      );
+      throw new EnvError(`${source.url}: ${(err as Error).message}`);
+    }
 
     const changeset = await computeChangeset({
       manifest,
@@ -190,6 +219,12 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
       confirm: opts.confirm,
       isTTY,
     });
+
+    const changesetCounts = {
+      added: changeset.added.length,
+      modified: changeset.modified.length,
+      removed: changeset.removed.length,
+    };
 
     if (applyStatus === 'applied' || applyStatus === 'no-changes') {
       const priorDests = Object.entries(lockfile.installed)
@@ -243,6 +278,21 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
           `${green('✓')} ${source.url}  ${dim(`policy=${policy}`)}  SHA: ${priorShort} -> ${newShort}  (${result.installed.length} added, ${result.updated.length} modified, ${removed.length} removed)${suffix}\n`,
         );
       }
+
+      const outcome: SyncOutcome = result.conflicts.length > 0 ? 'error' : 'success';
+      await appendSyncLog(
+        {
+          timestamp: new Date().toISOString(),
+          trigger,
+          outcome,
+          sourceUrl: source.url,
+          changeset: changesetCounts,
+          ...(result.conflicts.length > 0 && {
+            error: `${result.conflicts.length} collision(s) unresolved`,
+          }),
+        },
+        opts.logPath,
+      );
     } else {
       // Skipped — leave lockfile.sources[url] untouched at priorSha.
       perSource.push({
@@ -264,6 +314,17 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
       if (!opts.json) {
         logSkip(source.url, policy, applyStatus, changeset, opts);
       }
+
+      await appendSyncLog(
+        {
+          timestamp: new Date().toISOString(),
+          trigger,
+          outcome: 'skipped',
+          sourceUrl: source.url,
+          changeset: changesetCounts,
+        },
+        opts.logPath,
+      );
     }
   }
 
