@@ -51,6 +51,96 @@ Content is written into Claude Code's native auto-discovery paths under `~/.clau
 
 Every `ccpp install` and `ccpp sync` updates `ccpp.lock`, pinning each source to the exact commit SHA that was materialised on disk. Re-running `ccpp sync` without `--update` installs the pinned commits; with `--update` it fetches newer HEADs and rewrites the lock. That means teammates checking out the repo get byte-identical skill/command content.
 
+## Sync policy
+
+ccpp v0.1.1 introduces a **per-source sync policy** so you can choose, per source, whether `ccpp sync` should stay at the pinned commit or fast-forward to the latest upstream HEAD.
+
+| Policy | Behaviour on `ccpp sync` |
+|--------|--------------------------|
+| `pinned` *(default)* | Resolve the commit recorded in `ccpp.lock`. Upstream changes require an explicit `ccpp sync --prefer-latest` to land. Safe default — teammates never get surprised by a silent upstream bump. |
+| `latest` | Fetch the configured ref's current tip, apply it, and advance the lockfile. Pair with `autoAccept: true` + the SessionStart hook to get a true auto-update experience. |
+
+Set the global policy and per-source overrides via `ccpp config`:
+
+```bash
+# Opt the whole project into latest (one-time confirmation prompt — see 'Auto-update' below)
+ccpp config set syncPolicy latest
+
+# Or opt in per-source, leaving the rest pinned
+ccpp config set sources.git@bitbucket.org:mktz/ai-plugins-dev.git.policy latest
+```
+
+A minimal `ccpp.config.json` that mixes both shapes:
+
+```json
+{
+  "version": 1,
+  "scope": "user",
+  "syncPolicy": "pinned",
+  "sources": [
+    { "url": "git@bitbucket.org:mktz/ai-plugins-dev.git" },
+    { "url": "git@bitbucket.org:mktz/experimental.git", "policy": "latest" }
+  ]
+}
+```
+
+Two one-shot CLI overrides ignore the configured policy for a single invocation without persisting anything:
+
+```bash
+ccpp sync --prefer-latest   # treat every source as policy=latest for this run
+ccpp sync --pinned          # treat every source as policy=pinned for this run
+```
+
+`--prefer-latest` and `--pinned` are mutually exclusive. `--update` is kept as a documented alias for `--prefer-latest` so existing scripts keep working.
+
+## Auto-update via SessionStart hook
+
+Pair `syncPolicy: latest` + `autoAccept: true` + a Claude Code SessionStart hook to get upstream changes applied automatically at the start of every Claude Code session — no manual `ccpp sync`, no `/reload-plugins`.
+
+```bash
+# 1. Opt in to latest (one-time policy-risk warning)
+ccpp config set syncPolicy latest
+
+# 2. Opt in to silent apply (one-time auto-accept warning — separate risk)
+ccpp config set autoAccept true
+
+# 3. Register the SessionStart hook in ~/.claude/settings.json
+ccpp install-hook
+
+# 4. Confirm
+ccpp status
+```
+
+### Trust model — what you're opting in to
+
+The two flags are deliberately separate because they represent different risks, and you should acknowledge them independently:
+
+- **`syncPolicy: latest`** — any commit pushed to a source (including from compromised accounts, leaked credentials, or former-contributor access) will land in your `~/.claude/` on the next sync. You trust upstream.
+- **`autoAccept: true`** — ccpp applies changes without asking you to review them first. You lose the diff-preview confirmation step.
+
+Enabling either value for the first time prints a warning describing the risk and prompts `[y/N]`. On confirm, a timestamp (`policyAcknowledgedAt` / `autoAcceptAcknowledgedAt`) lands in `ccpp.config.json` and the warning is not shown again. Use `--auto-accept` on the `ccpp config set` call to skip the prompt in scripted setup — it still records the acknowledgement so the decision is auditable.
+
+### Hook semantics
+
+The hook is intentionally defensive:
+
+- **Never blocks Claude Code.** Sync errors (offline, auth failure, network blip) are logged to `~/.ccpp/sync.log` and the hook exits 0 — Claude Code proceeds with whatever state `~/.claude/` already has.
+- **No prompts inside the hook.** Hooks are non-interactive. A source with `policy: latest` but `autoAccept: false` is *skipped* during a hook-triggered sync (with a log line) — you still need to run `ccpp sync` manually to review that source.
+- **Fast.** Hook start-up adds <500ms on a cache-hit happy path.
+
+### What `ccpp status` shows
+
+```bash
+$ ccpp status
+ai-plugins-dev   policy=latest   last-sync=2026-04-23T09:12:04Z  ✓ up-to-date (9f3c2a1)
+experimental     policy=latest   last-sync=2026-04-23T09:12:04Z  ! skipped (autoAccept=false)
+internal-tools   policy=pinned   last-sync=2026-04-21T14:00:12Z  ✓ pinned @ 8e01c3d
+```
+
+Per-source state, last-sync timestamps, and any skipped/errored sources from the last hook run. `~/.ccpp/sync.log` (NDJSON, auto-rotated at ~1MB) has the full history if you need to dig in.
+
+For a deeper walkthrough of the three trust dimensions, see [`docs/auto-update.md`](./docs/auto-update.md).
+
 ## Common recipes
 
 ### Single-source team setup
@@ -111,5 +201,13 @@ ccpp caches source clones under `${CCPP_CACHE:-~/.ccpp/cache}`. Nuke it if somet
 rm -rf ~/.ccpp/cache
 npx ccpp sync
 ```
+
+### Hook not firing
+
+If you ran `ccpp install-hook` but a new Claude Code session doesn't seem to be picking up upstream changes, walk these three checkpoints in order:
+
+1. **Is the hook registered?** Open `~/.claude/settings.json` and look for a `SessionStart` entry pointing at `ccpp sync`. If it's missing, the install step didn't land (a permissions issue on the file, or it was removed by another tool) — re-run `ccpp install-hook`.
+2. **Did the hook run and silently fail?** Tail `~/.ccpp/sync.log` — every hook-triggered sync writes an NDJSON line, success or failure. Auth failures, offline remotes, and sources skipped for `autoAccept=false` all show up here.
+3. **What does ccpp think happened?** `ccpp status` renders the last-sync state per source and flags any skips / errors from the last hook pass. If status says everything succeeded but you're not seeing the upstream change, check that `syncPolicy` really is `latest` for that source (`ccpp config get sources.<url>.policy`).
 
 See [`docs/exit-codes.md`](./docs/exit-codes.md) for the full exit-code reference.

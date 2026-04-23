@@ -46,7 +46,49 @@ Same skills, same slash commands, same Bitbucket repo — but with auto-update, 
 
 4. **(Optional) Remove the old install.sh-managed files.** ccpp writes to the same auto-discovery paths that `install.sh` did, so the old files have already been superseded in most cases. If you want to be thorough, grep for files that were written by `install.sh` but are no longer in the repo — those are orphans you can delete. ccpp's `sync` has its own orphan-detection once Wave 4 ships; until then this step is manual.
 
-5. **(Optional) Auto-sync on session start.** Once Wave 5 ships, you'll be able to add a Claude Code SessionStart hook that runs `ccpp sync` automatically. This keeps every session current without any manual step. Instructions will land in this file when that release is cut.
+5. **(Optional) Auto-sync on session start.** Available from v0.1.1 — see [Moving from manual sync to auto-update (v0.1.1+)](#moving-from-manual-sync-to-auto-update-v011) below.
+
+## Moving from manual sync to auto-update (v0.1.1+)
+
+This is the successor to the v0.1.0 beachhead: `ccpp sync` auto-runs at Claude Code session start, fetches any new commits from upstream, and applies them without you lifting a finger. That's exactly the gap `install.sh` left open — the CTO pushes a new command to `ai-plugins-dev`, and every teammate has to remember to re-sync. This flow closes it.
+
+You'll flip **three independent switches**. Each one has a distinct risk; take a moment to read the trust-model notes in [README — Auto-update via SessionStart hook](./README.md#auto-update-via-sessionstart-hook) before you turn them all on.
+
+1. **Opt sources in to `latest` policy.** By default ccpp stays on the SHA recorded in `ccpp.lock`. Switching to `latest` means any commit pushed to a source lands on your next sync.
+   ```bash
+   ccpp config set syncPolicy latest --auto-accept
+   ```
+   The `--auto-accept` flag acknowledges the one-time policy-risk warning in-line, for scripted setup. Omit it if you want to see the prompt and respond interactively.
+
+2. **Enable silent apply.** With `autoAccept: true`, ccpp applies the diff without prompting — the hook needs this because hooks are non-interactive.
+   ```bash
+   ccpp config set autoAccept true --auto-accept
+   ```
+   This is a *separate* acknowledgement from step 1. You're opting out of the diff-preview guard for manual syncs, too — re-enable it any time with `ccpp config reset autoAccept` + `ccpp config reset autoAcceptAcknowledgedAt`.
+
+3. **Register the SessionStart hook.**
+   ```bash
+   ccpp install-hook
+   ```
+   This writes an entry into `~/.claude/settings.json` that runs `ccpp sync` whenever Claude Code starts a new session. The hook is defensive: sync errors log to `~/.ccpp/sync.log` and never block Claude Code from starting.
+
+4. **Verify.** Open a fresh Claude Code session, then:
+   ```bash
+   ccpp status
+   ```
+   You should see each source with a recent `last-sync` timestamp and a `policy=latest` label. Ask the CTO to push a test commit to `ai-plugins-dev`, start a new Claude Code session, and re-run `ccpp status` — the SHA should advance with no manual intervention.
+
+### Rollback the auto-update flow
+
+If auto-update misbehaves on a given machine, step back out safely:
+
+```bash
+ccpp uninstall-hook                          # removes the SessionStart entry
+ccpp config set syncPolicy pinned            # stop following upstream automatically
+ccpp config set autoAccept false             # restore the diff-preview confirmation
+```
+
+The acknowledgement timestamps stay in place — they're a record that you've *seen* the warnings, not a live setting. If you later re-enable either flag, ccpp won't re-prompt.
 
 ## Rollback
 
