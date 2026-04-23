@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-04-23
+
+- Feature: `ccpp install` with no URL now launches an interactive first-time setup wizard on a TTY — prompts for source URL, `syncPolicy`, `autoAccept`, and whether to install the SessionStart hook, then writes `ccpp.config.json`, clones the source, installs, registers the hook, and prints a "what's next" guide. Runs only on the very first install (no existing `ccpp.config.json`); subsequent runs with no URL error out cleanly pointing at `ccpp install <url>`.
+- Feature: interactive collision resolution — when two sources supply the same command/skill name, ccpp now prompts per-collision (`keep` / `use-incoming` / `cancel`) on a TTY and records the winner under `preferredSources`. Non-interactive contexts keep the exit-`3` behaviour so scripts fail loudly.
+- CLI: `ccpp install` changed from `<url>` (required) to `[url]` (optional). The explicit-URL form is unchanged. `--ref`, `--prefer`, and `--scratch` now error if passed without a URL.
+- Library: new `promptLine` and `promptChoice` helpers in `src/lib/term.ts`; first-run setup state machine extracted into `src/commands/install-wizard.ts` with an injectable `WizardIO` so the logic is testable without a pty.
+- Docs: Quick Start gained a "Fastest path — interactive wizard" section; `docs/exit-codes.md` updated to reflect the TTY-aware collision path.
+
 ## [0.1.2] - 2026-04-23
 
 - Security: refuse to follow symlinks when reading files from a source repo — a crafted source can no longer trick ccpp into reading outside its clone directory.
