@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.1] - Unreleased
+## [0.1.1] - 2026-04-23
 
 - Per-source `syncPolicy`: `pinned` | `latest`, settable globally in `ccpp.config.json` and overridable per source entry.
 - `--prefer-latest` and `--pinned` one-shot CLI overrides on `ccpp sync` (mutually exclusive; `--update` is kept as a documented alias for `--prefer-latest`).
