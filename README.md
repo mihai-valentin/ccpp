@@ -130,14 +130,20 @@ The hook is intentionally defensive:
 
 ### What `ccpp status` shows
 
-```bash
+```
 $ ccpp status
-ai-plugins-dev   policy=latest   last-sync=2026-04-23T09:12:04Z  ✓ up-to-date (9f3c2a1)
-experimental     policy=latest   last-sync=2026-04-23T09:12:04Z  ! skipped (autoAccept=false)
-internal-tools   policy=pinned   last-sync=2026-04-21T14:00:12Z  ✓ pinned @ 8e01c3d
+SOURCE                                          POLICY  LAST_SYNC                 SHA      STATUS
+git@bitbucket.org:mktz/ai-plugins-dev.git       latest  2026-04-23T09:12:04.000Z  9f3c2a1  up-to-date
+git@bitbucket.org:mktz/experimental.git         latest  2026-04-23T09:12:04.000Z  —        skipped (autoAccept=false or user-declined)
+https://github.com/anthropic/community-tools    pinned  2026-04-21T14:00:12.000Z  8e01c3d  up-to-date
+
+Recent events:
+  ✓ 2026-04-23T09:12:04.000Z  hook  git@.../ai-plugins-dev.git      +1/~0/-0
+  ! 2026-04-23T09:12:04.000Z  hook  git@.../experimental.git        +2/~0/-0
+  ✓ 2026-04-21T14:00:12.000Z  manual  https://.../community-tools   +0/~0/-0
 ```
 
-Per-source state, last-sync timestamps, and any skipped/errored sources from the last hook run. `~/.ccpp/sync.log` (NDJSON, auto-rotated at ~1MB) has the full history if you need to dig in.
+Per-source state (policy, last-sync timestamp, pinned SHA, current status) and the tail of the log. `~/.ccpp/sync.log` (NDJSON, auto-rotated at ~1MB) has the full history if you need to dig in. Run `ccpp status --json` for a machine-readable report.
 
 For a deeper walkthrough of the three trust dimensions, see [`docs/auto-update.md`](./docs/auto-update.md).
 

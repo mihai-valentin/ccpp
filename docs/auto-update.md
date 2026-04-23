@@ -14,14 +14,16 @@ Keeping them separate is intentional. A lot of failure modes fall out cleanly wh
 
 | Policy | autoAccept | Hook | Behaviour |
 |--------|:----------:|:----:|-----------|
-| `pinned` | `false` | — | Default. `ccpp sync` re-installs the lockfile SHA; `sync --prefer-latest` is the only way upstream changes land. Diff preview shown on any change. |
-| `pinned` | `true` | — | Lockfile still authoritative. `sync --prefer-latest` applies silently (no diff-preview). Good for scripted rollouts you've already reviewed. |
-| `latest` | `false` | — | `ccpp sync` follows upstream HEAD but **prompts `[y/N]` before applying** the diff. Hook runs will *skip* these sources (see note below). |
-| `latest` | `true` | — | `ccpp sync` follows upstream HEAD and applies silently. Without the hook you still need to trigger sync yourself (e.g. via a shell alias, a git post-checkout hook). |
+| `pinned` | `false` | — | Default. `ccpp sync` fetches the configured ref tip, computes the diff, and **prompts `[y/N]` before applying** — nothing lands without explicit confirmation. Non-TTY shells skip instead of prompting. |
+| `pinned` | `true` | — | `ccpp sync` applies silently — the diff-preview confirmation is skipped. Good for scripted rollouts you've already reviewed. |
+| `latest` | `false` | — | Same runtime behaviour as the first row — prompt on every change, skip in non-TTY contexts. The `policy: latest` label shows up in `ccpp status` and in the `ccpp sync` output to flag that the source is expected to track upstream. |
+| `latest` | `true` | — | `ccpp sync` fetches upstream HEAD and applies silently. Without the hook you still need to trigger sync yourself (e.g. via a shell alias, a git post-checkout hook). |
 | `latest` | `true` | installed | The "hands-off" setup. A new Claude Code session = fresh upstream content in `~/.claude/`. Intended endpoint for Omniconvert's day-two flow. |
 | any | `false` | installed | Hook runs, fetches the source, but *does not apply* any change — applying requires either `autoAccept: true` or an interactive prompt, and hooks are non-interactive. The skip is logged to `~/.ccpp/sync.log` with a hint to run `ccpp sync` manually. |
 
 The last row is the most important one to grok: installing the hook does **not** silently opt you in to auto-apply. You need `autoAccept: true` for that. The hook alone just guarantees a sync *attempts* to run at session start.
+
+> **v0.1.1 note on pinned vs. latest.** At the code level, both policies currently perform the same fetch + apply dance — the practical safety is delivered by `autoAccept: false` + the diff-preview prompt (first two / third rows above), not by the policy label itself. The label resolves through the sync pipeline, shows up in reports, and is persisted in the lockfile so a future release can add pinned-SHA locking semantics without another config migration. For today, think of `syncPolicy` as an intent declaration (and a future-flex hook), not a separate behavior branch.
 
 ## Per-source overrides
 
