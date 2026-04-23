@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-04-23
+
+- Fix: install wizard's post-install report now counts `installed + updated + unchanged` files, not just newly-created ones. Re-running the wizard over already-populated `~/.claude/` previously showed "0 command(s), 0 skill(s)" even though `ccpp list` correctly saw the full set. Report also now carries a 3-way breakdown line under the total.
+- Library: counting logic extracted into pure `summarizeInstalledTargets()` in `src/commands/install-wizard.ts` and pinned by a named regression test plus shape tests.
+- Docs: scrubbed all Omniconvert references from public-facing files — README, `docs/exit-codes.md`, `docs/auto-update.md`, test URL fixtures. Test author-name fixtures renamed to "Example Org AI Tooling". `MIGRATION.md` deleted (Omniconvert-specific guide, no generic content to salvage).
+
 ## [0.1.3] - 2026-04-23
 
 - Feature: `ccpp install` with no URL now launches an interactive first-time setup wizard on a TTY — prompts for source URL, `syncPolicy`, `autoAccept`, and whether to install the SessionStart hook, then writes `ccpp.config.json`, clones the source, installs, registers the hook, and prints a "what's next" guide. Runs only on the very first install (no existing `ccpp.config.json`); subsequent runs with no URL error out cleanly pointing at `ccpp install <url>`.
