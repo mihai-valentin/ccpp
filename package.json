@@ -6,11 +6,11 @@
   "author": "Mihai Valentin",
   "repository": {
     "type": "git",
-    "url": "git+REPLACE_WITH_REMOTE_URL"
+    "url": "git+https://github.com/mihai-valentin/ccpp.git"
   },
-  "homepage": "REPLACE_WITH_REMOTE_URL#readme",
+  "homepage": "https://github.com/mihai-valentin/ccpp#readme",
   "bugs": {
-    "url": "REPLACE_WITH_REMOTE_URL/issues"
+    "url": "https://github.com/mihai-valentin/ccpp/issues"
   },
   "keywords": [
     "claude-code",
