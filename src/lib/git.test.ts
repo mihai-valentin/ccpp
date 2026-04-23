@@ -13,10 +13,10 @@ import {
 
 describe('parseRepoUrl', () => {
   it('parses an SSH scp-form URL (git@host:owner/repo.git)', () => {
-    expect(parseRepoUrl('git@bitbucket.org:mktz/ai-plugins-dev.git')).toEqual({
+    expect(parseRepoUrl('git@bitbucket.org:example-org/ai-plugins.git')).toEqual({
       host: 'bitbucket.org',
-      owner: 'mktz',
-      repo: 'ai-plugins-dev',
+      owner: 'example-org',
+      repo: 'ai-plugins',
     });
   });
 
@@ -63,8 +63,8 @@ describe('parseRepoUrl', () => {
 
 describe('cachePathFor', () => {
   it('lays out the cache under <root>/<host>/<owner>/<repo>', () => {
-    expect(cachePathFor('git@bitbucket.org:mktz/ai-plugins-dev.git', '/cache')).toBe(
-      join('/cache', 'bitbucket.org', 'mktz', 'ai-plugins-dev'),
+    expect(cachePathFor('git@bitbucket.org:example-org/ai-plugins.git', '/cache')).toBe(
+      join('/cache', 'bitbucket.org', 'example-org', 'ai-plugins'),
     );
   });
 

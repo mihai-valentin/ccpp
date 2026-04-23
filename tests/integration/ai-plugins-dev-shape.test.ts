@@ -94,15 +94,14 @@ function cli(
   return run('node', [cliPath, ...withHome], opts);
 }
 
-/* ---------- fixture content mirroring Omniconvert's ai-plugins-dev ---------- */
+/* ---------- fixture content mirroring a real-world private skills repo ---------- */
 
 const PR_WORKFLOW_PLUGIN_JSON = `${JSON.stringify(
   {
     name: 'ai-pr-workflow',
     version: '0.1.0',
-    description:
-      "Commit-message and PR-description discipline for Omniconvert's AI-augmented workflow.",
-    author: { name: 'Omniconvert AI Tooling' },
+    description: 'Commit-message and PR-description discipline for AI-augmented workflows.',
+    author: { name: 'Example Org AI Tooling' },
     keywords: ['pr', 'commit', 'git', 'ai', 'workflow'],
   },
   null,
@@ -115,7 +114,7 @@ const GIT_CONFLICT_PLUGIN_JSON = `${JSON.stringify(
     version: '0.1.0',
     description:
       'Resolve git merge conflicts thoughtfully using three-way context.',
-    author: { name: 'Omniconvert AI Tooling' },
+    author: { name: 'Example Org AI Tooling' },
     keywords: ['git', 'merge', 'conflict'],
   },
   null,

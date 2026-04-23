@@ -43,7 +43,7 @@ The wizard only runs on the very first invocation (no `ccpp.config.json` yet). O
 npx ccpp init
 
 # 2. Install one or more source repos (private or public)
-npx ccpp install git@bitbucket.org:your-org/ai-plugins-dev.git
+npx ccpp install git@bitbucket.org:your-org/ai-plugins.git
 npx ccpp install https://github.com/your-org/claude-plugins.git
 
 # 3. Later — sync all sources to the commit pinned in ccpp.lock.json (with a diff-preview prompt)
@@ -53,12 +53,12 @@ npx ccpp sync
 npx ccpp list
 
 # 5. Remove a source
-npx ccpp uninstall ai-plugins-dev
+npx ccpp uninstall ai-plugins
 ```
 
 ## How it works
 
-ccpp reads each source's `.claude-plugin/marketplace.json` — the same manifest shape Claude Code already uses — and, when that file is missing, falls back to a convention scan: any directory under `plugins/<name>/` with a `.claude-plugin/plugin.json` is a plugin, and any `commands/*.md` at the repo root is a standalone slash command. This means existing repos like Omniconvert's `ai-plugins-dev` work without authoring a marketplace manifest.
+ccpp reads each source's `.claude-plugin/marketplace.json` — the same manifest shape Claude Code already uses — and, when that file is missing, falls back to a convention scan: any directory under `plugins/<name>/` with a `.claude-plugin/plugin.json` is a plugin, and any `commands/*.md` at the repo root is a standalone slash command. This means existing private repos that pre-date the marketplace format work without authoring a manifest first.
 
 Content is written into Claude Code's native auto-discovery paths under `~/.claude/`. That means Claude Code picks up changes on its own — no `/reload-plugins` or restart required. Short command names (e.g. `/git-commit`) are preserved; ccpp does **not** rewrite them to namespaced forms.
 
@@ -80,7 +80,7 @@ Set the global policy and per-source overrides via `ccpp config`:
 ccpp config set syncPolicy latest
 
 # Or opt in per-source, leaving the rest pinned
-ccpp config set sources.git@bitbucket.org:mktz/ai-plugins-dev.git.policy latest
+ccpp config set sources.git@bitbucket.org:your-org/ai-plugins.git.policy latest
 ```
 
 A minimal `ccpp.config.json` that mixes both shapes:
@@ -91,8 +91,8 @@ A minimal `ccpp.config.json` that mixes both shapes:
   "scope": "user",
   "syncPolicy": "pinned",
   "sources": [
-    { "url": "git@bitbucket.org:mktz/ai-plugins-dev.git" },
-    { "url": "git@bitbucket.org:mktz/experimental.git", "policy": "latest" }
+    { "url": "git@bitbucket.org:your-org/ai-plugins.git" },
+    { "url": "git@bitbucket.org:your-org/experimental.git", "policy": "latest" }
   ]
 }
 ```
@@ -146,12 +146,12 @@ The hook is intentionally defensive:
 ```
 $ ccpp status
 SOURCE                                          POLICY  LAST_SYNC                 SHA      STATUS
-git@bitbucket.org:mktz/ai-plugins-dev.git       latest  2026-04-23T09:12:04.000Z  9f3c2a1  up-to-date
-git@bitbucket.org:mktz/experimental.git         latest  2026-04-23T09:12:04.000Z  —        skipped (autoAccept=false or user-declined)
+git@bitbucket.org:your-org/ai-plugins.git       latest  2026-04-23T09:12:04.000Z  9f3c2a1  up-to-date
+git@bitbucket.org:your-org/experimental.git         latest  2026-04-23T09:12:04.000Z  —        skipped (autoAccept=false or user-declined)
 https://github.com/anthropic/community-tools    pinned  2026-04-21T14:00:12.000Z  8e01c3d  up-to-date
 
 Recent events:
-  ✓ 2026-04-23T09:12:04.000Z  hook  git@.../ai-plugins-dev.git      +1/~0/-0
+  ✓ 2026-04-23T09:12:04.000Z  hook  git@.../ai-plugins.git      +1/~0/-0
   ! 2026-04-23T09:12:04.000Z  hook  git@.../experimental.git        +2/~0/-0
   ✓ 2026-04-21T14:00:12.000Z  manual  https://.../community-tools   +0/~0/-0
 ```
@@ -167,7 +167,7 @@ For a deeper walkthrough of the three trust dimensions, see [`docs/auto-update.m
 One shared Bitbucket/GitLab repo of in-house skills. Each teammate runs:
 
 ```bash
-npx ccpp install git@bitbucket.org:your-org/ai-plugins-dev.git
+npx ccpp install git@bitbucket.org:your-org/ai-plugins.git
 ```
 
 …and `npx ccpp sync` after each `git pull` of the manifest-owning repo.

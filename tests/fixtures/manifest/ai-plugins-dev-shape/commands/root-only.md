@@ -1,1 +1,1 @@
-Repo-level standalone command (mirrors the shape of Omniconvert's ai-plugins-dev top-level commands/).
+Repo-level standalone command (mirrors a real-world private skills repo's top-level commands/).

@@ -18,7 +18,7 @@ Keeping them separate is intentional. A lot of failure modes fall out cleanly wh
 | `pinned` | `true` | — | `ccpp sync` applies silently — the diff-preview confirmation is skipped. Good for scripted rollouts you've already reviewed. |
 | `latest` | `false` | — | Same runtime behaviour as the first row — prompt on every change, skip in non-TTY contexts. The `policy: latest` label shows up in `ccpp status` and in the `ccpp sync` output to flag that the source is expected to track upstream. |
 | `latest` | `true` | — | `ccpp sync` fetches upstream HEAD and applies silently. Without the hook you still need to trigger sync yourself (e.g. via a shell alias, a git post-checkout hook). |
-| `latest` | `true` | installed | The "hands-off" setup. A new Claude Code session = fresh upstream content in `~/.claude/`. Intended endpoint for Omniconvert's day-two flow. |
+| `latest` | `true` | installed | The "hands-off" setup. A new Claude Code session = fresh upstream content in `~/.claude/`. Intended endpoint for day-two auto-update teams. |
 | any | `false` | installed | Hook runs, fetches the source, but *does not apply* any change — applying requires either `autoAccept: true` or an interactive prompt, and hooks are non-interactive. The skip is logged to `~/.ccpp/sync.log` with a hint to run `ccpp sync` manually. |
 
 The last row is the most important one to grok: installing the hook does **not** silently opt you in to auto-apply. You need `autoAccept: true` for that. The hook alone just guarantees a sync *attempts* to run at session start.
@@ -36,7 +36,7 @@ The policy switch is the only one of the three that can be set per source. This 
   "syncPolicy": "pinned",
   "autoAccept": true,
   "sources": [
-    { "url": "git@bitbucket.org:mktz/ai-plugins-dev.git", "policy": "latest" },
+    { "url": "git@bitbucket.org:your-org/ai-plugins.git", "policy": "latest" },
     { "url": "https://github.com/example/community-tools.git" }
   ]
 }
@@ -45,7 +45,7 @@ The policy switch is the only one of the three that can be set per source. This 
 The CLI equivalent:
 
 ```bash
-ccpp config set sources.git@bitbucket.org:mktz/ai-plugins-dev.git.policy latest
+ccpp config set sources.git@bitbucket.org:your-org/ai-plugins.git.policy latest
 ```
 
 ## One-time acknowledgements

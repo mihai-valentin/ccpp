@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { runInstallWizard, type WizardIO, type WizardPlan } from './install-wizard.js';
+import {
+  runInstallWizard,
+  summarizeInstalledTargets,
+  type WizardIO,
+  type WizardPlan,
+} from './install-wizard.js';
 
 /**
  * Programmable IO: feeds canned answers to the wizard and records every
@@ -64,7 +69,7 @@ function makeIO(scripted: Scripted): RecordedIO {
 describe('runInstallWizard', () => {
   it('happy path — pinned, autoAccept skipped, no hook', async () => {
     const io = makeIO({
-      lines: ['git@bitbucket.org:mktz/ai-plugins-dev.git', ''], // url, ref-blank
+      lines: ['git@bitbucket.org:example-org/ai-plugins.git', ''], // url, ref-blank
       choices: { 'Sync policy': 'pinned' },
       yesNo: [
         { match: /SessionStart/, answer: false }, // hook? no
@@ -75,7 +80,7 @@ describe('runInstallWizard', () => {
     const plan = await runInstallWizard(io);
     expect(plan).not.toBeNull();
     expect(plan).toMatchObject<Partial<WizardPlan>>({
-      url: 'git@bitbucket.org:mktz/ai-plugins-dev.git',
+      url: 'git@bitbucket.org:example-org/ai-plugins.git',
       syncPolicy: 'pinned',
       autoAccept: false,
       installHook: false,
@@ -99,7 +104,7 @@ describe('runInstallWizard', () => {
 
   it('latest policy triggers a second confirmation prompt with the exact warning text', async () => {
     const io = makeIO({
-      lines: ['git@bitbucket.org:mktz/x.git', ''],
+      lines: ['git@bitbucket.org:example-org/x.git', ''],
       choices: { 'Sync policy': 'latest' },
       yesNo: [
         true, // confirm latest-risk warning
@@ -118,7 +123,7 @@ describe('runInstallWizard', () => {
 
   it('autoAccept prompt fires only when syncPolicy=latest, and enabling requires a second confirm', async () => {
     const io = makeIO({
-      lines: ['git@bitbucket.org:mktz/x.git', ''],
+      lines: ['git@bitbucket.org:example-org/x.git', ''],
       choices: { 'Sync policy': 'latest' },
       yesNo: [
         true, // confirm latest risk
@@ -136,7 +141,7 @@ describe('runInstallWizard', () => {
 
   it('final "Apply this plan? [Y/n]" returning false yields null (no writes)', async () => {
     const io = makeIO({
-      lines: ['git@bitbucket.org:mktz/x.git', ''],
+      lines: ['git@bitbucket.org:example-org/x.git', ''],
       choices: { 'Sync policy': 'pinned' },
       yesNo: [false, false], // hook no, confirm NO
     });
@@ -165,15 +170,90 @@ describe('runInstallWizard', () => {
 
   it('plan preview shows every collected field before the final confirm', async () => {
     const io = makeIO({
-      lines: ['git@bitbucket.org:mktz/x.git', 'main'],
+      lines: ['git@bitbucket.org:example-org/x.git', 'main'],
       choices: { 'Sync policy': 'pinned' },
       yesNo: [false, true],
     });
     await runInstallWizard(io);
     const outputs = io.outputs.join('\n');
-    expect(outputs).toMatch(/source:\s+git@bitbucket\.org:mktz\/x\.git/);
+    expect(outputs).toMatch(/source:\s+git@bitbucket\.org:example-org\/x\.git/);
     expect(outputs).toMatch(/syncPolicy:\s+pinned/);
     expect(outputs).toMatch(/autoAccept:\s+false/);
     expect(outputs).toMatch(/hook:\s+skip/);
+  });
+});
+
+describe('summarizeInstalledTargets', () => {
+  const home = '/home/u/.claude';
+
+  it('counts newly installed files (classic first-install case)', () => {
+    const { commandCount, skillNames } = summarizeInstalledTargets(
+      {
+        installed: [
+          `${home}/commands/a.md`,
+          `${home}/commands/b.md`,
+          `${home}/skills/pr-review/SKILL.md`,
+          `${home}/skills/pr-review/references/style.md`,
+          `${home}/skills/git-commit/SKILL.md`,
+        ],
+        updated: [],
+        unchanged: [],
+      },
+      home,
+    );
+    expect(commandCount).toBe(2);
+    expect(skillNames).toEqual(['git-commit', 'pr-review']);
+  });
+
+  it('REGRESSION — counts unchanged + updated files too, not just newly-installed', () => {
+    // Repro for the v0.1.3 wizard bug: re-running the wizard over an
+    // already-populated ~/.claude/ classified every file as `unchanged`,
+    // so the report showed "0 command(s), 0 skill(s) written" even
+    // though `ccpp list` showed the full set.
+    const { commandCount, skillNames } = summarizeInstalledTargets(
+      {
+        installed: [],
+        updated: [`${home}/commands/changed.md`],
+        unchanged: [
+          `${home}/commands/stable-1.md`,
+          `${home}/commands/stable-2.md`,
+          `${home}/skills/review/SKILL.md`,
+          `${home}/skills/review/refs/notes.md`,
+        ],
+      },
+      home,
+    );
+    expect(commandCount).toBe(3);
+    expect(skillNames).toEqual(['review']);
+  });
+
+  it('deduplicates multi-file skills into a single name', () => {
+    const { skillNames } = summarizeInstalledTargets(
+      {
+        installed: [
+          `${home}/skills/big/SKILL.md`,
+          `${home}/skills/big/a.md`,
+          `${home}/skills/big/b.md`,
+          `${home}/skills/big/sub/c.md`,
+        ],
+        updated: [],
+        unchanged: [],
+      },
+      home,
+    );
+    expect(skillNames).toEqual(['big']);
+  });
+
+  it('ignores files outside the claudeHome prefix', () => {
+    const { commandCount, skillNames } = summarizeInstalledTargets(
+      {
+        installed: [`/somewhere/else/commands/nope.md`, `${home}/commands/yep.md`],
+        updated: [],
+        unchanged: [],
+      },
+      home,
+    );
+    expect(commandCount).toBe(1);
+    expect(skillNames).toEqual([]);
   });
 });

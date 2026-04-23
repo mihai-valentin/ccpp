@@ -8,7 +8,12 @@ import {
   type InstallHookResult,
   runInstallHook,
 } from './commands/install-hook.js';
-import { runInstallWizard, type WizardIO, type WizardPlan } from './commands/install-wizard.js';
+import {
+  runInstallWizard,
+  summarizeInstalledTargets,
+  type WizardIO,
+  type WizardPlan,
+} from './commands/install-wizard.js';
 import { runStatus } from './commands/status.js';
 import { resolveOverride, runSync } from './commands/sync.js';
 import { runUninstallHook } from './commands/uninstall-hook.js';
@@ -735,19 +740,19 @@ function emitWizardReport(params: WizardReportParams): void {
     );
     return;
   }
-  const commands = result.installed.filter((p) => p.includes(`${common.claudeHome}/commands/`));
-  const skillFiles = result.installed.filter((p) => p.includes(`${common.claudeHome}/skills/`));
-  const skillNames = new Set<string>();
-  for (const f of skillFiles) {
-    const rest = f.slice(`${common.claudeHome}/skills/`.length);
-    const name = rest.split(/[\\/]/)[0];
-    if (name) skillNames.add(name);
-  }
+  const { commandCount, skillNames } = summarizeInstalledTargets(result, common.claudeHome);
 
   log('', common);
   log(bold('Install complete'), common);
   log(`  ${green('✓')} ${plan.url} ${dim(`@${synced.sha.slice(0, 7)} (${synced.ref})`)}`, common);
-  log(`    ${commands.length} command(s), ${skillNames.size} skill(s) written to ${common.claudeHome}`, common);
+  log(
+    `    ${commandCount} command(s), ${skillNames.length} skill(s) in ${common.claudeHome}`,
+    common,
+  );
+  log(
+    `    ${dim(`${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged`)}`,
+    common,
+  );
   if (result.backups.length > 0) {
     log(`    ${yellow('!')} ${result.backups.length} file(s) backed up before overwrite`, common);
   }

@@ -15,7 +15,7 @@ Every ccpp subcommand exits with one of the codes below. Scripts driving ccpp (C
 
 ```bash
 $ npx ccpp sync --auto-accept
-✓ git@bitbucket.org:mktz/ai-plugins-dev.git  policy=latest  SHA: 9f3c2a1 -> 9f3c2a1  (0 added, 0 modified, 0 removed) (up-to-date)
+✓ git@bitbucket.org:your-org/ai-plugins.git  policy=latest  SHA: 9f3c2a1 -> 9f3c2a1  (0 added, 0 modified, 0 removed) (up-to-date)
 $ echo $?
 0
 ```
@@ -44,7 +44,7 @@ $ echo $?
 
 ```bash
 $ npx ccpp sync --auto-accept
-✗ git@bitbucket.org:mktz/ai-plugins-dev.git: git fetch --tags --prune origin failed (exit 128): fatal: could not read from remote repository.
+✗ git@bitbucket.org:your-org/ai-plugins.git: git fetch --tags --prune origin failed (exit 128): fatal: could not read from remote repository.
   Please make sure you have the correct access rights and the repository exists.
 $ echo $?
 2
@@ -60,7 +60,7 @@ When two sources supply the same short command or skill name, ccpp's behaviour s
 ```bash
 $ npx ccpp install https://github.com/example/overlap.git < /dev/null
 ✗ 1 collision(s) unresolved:
-  git-commit: git@bitbucket.org:mktz/ai-plugins-dev.git vs https://github.com/example/overlap.git
+  git-commit: git@bitbucket.org:your-org/ai-plugins.git vs https://github.com/example/overlap.git
 Resolve with: ccpp install https://github.com/example/overlap.git --prefer   # makes this install win
 $ echo $?
 3
