@@ -4,6 +4,26 @@
   "description": "Private Claude Code skill and slash-command distribution from any git host — short names, live reload, lockfile-pinned.",
   "license": "MIT",
   "author": "Mihai Valentin",
+  "repository": {
+    "type": "git",
+    "url": "git+REPLACE_WITH_REMOTE_URL"
+  },
+  "homepage": "REPLACE_WITH_REMOTE_URL#readme",
+  "bugs": {
+    "url": "REPLACE_WITH_REMOTE_URL/issues"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "cli",
+    "skills",
+    "commands",
+    "plugins",
+    "marketplace",
+    "git",
+    "bitbucket",
+    "private-registry"
+  ],
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
@@ -15,12 +35,17 @@
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build && npm test -- --run && npm run typecheck"
   },
   "dependencies": {
     "cac": "^6.7.14"

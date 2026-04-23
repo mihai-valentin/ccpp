@@ -4,11 +4,18 @@ dist/
 .env
 .env.*
 !.env.example
-.DS_Store
 *.tsbuildinfo
 coverage/
 .vitest-cache/
 .cache/
+
+# ccpp-produced runtime artifacts. This repo is the PRODUCER, not a consumer
+# of itself — if a contributor dogfoods ccpp from here, these land in cwd
+# and should not be tracked.
+.ccpp/
+ccpp.lock
+ccpp.lock.json
+ccpp.config.json
 
 # Root-session-owned artifacts (managed by xlnf root, not by ccpp's own git)
 CLAUDE.md

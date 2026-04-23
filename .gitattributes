@@ -1,0 +1,14 @@
+# Keep text files LF-normalized in the repo regardless of each contributor's
+# core.autocrlf setting. Prevents the "my diff is all lines" problem on Windows.
+* text=auto eol=lf
+
+# Common binary formats — do not attempt eol conversion or diffs.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Don't let the committed lockfile dominate GitHub's language statistics.
+package-lock.json linguist-generated=true
