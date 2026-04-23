@@ -180,6 +180,28 @@ describe('computeChangeset', () => {
     expect(hasChanges(cs)).toBe(true);
   });
 
+  it('refuses to compare bytes of a source file that is a symlink', async () => {
+    // Mirror of installer.test.ts — defense-in-depth: even if a symlink
+    // slipped past manifest.walkFiles, computeChangeset must refuse to
+    // read it (otherwise the diff preview would leak target bytes).
+    const realTarget = await writeSourceFile('real.md', 'target bytes');
+    const linkPath = join(sourceRoot, 'commands', 'evil.md');
+    await fs.mkdir(dirname(linkPath), { recursive: true });
+    // Dest has to exist for the read-and-compare branch to be reached.
+    await writeDestFile('commands/evil.md', 'dest bytes');
+    await fs.symlink(realTarget, linkPath);
+
+    await expect(
+      computeChangeset({
+        manifest: buildManifest({ standaloneCommands: [{ name: 'evil', sourceFile: linkPath }] }),
+        sourceUrl: 'https://x/one.git',
+        sourceSha: 'sha-1',
+        claudeHome,
+        lockfile: emptyLockfile(),
+      }),
+    ).rejects.toThrow(/refusing to read symlink/i);
+  });
+
   it('(6) destPaths match what applyManifest would produce (commands + plugin skills)', async () => {
     const helloSrc = await writeSourceFile('commands/hello.md', 'hello body');
     const prSrc = await writeSourceFile('plugins/pr/commands/pr.md', 'pr body');

@@ -318,6 +318,32 @@ describe('removeFromLockfile', () => {
     expect(lockfile.sources).toEqual({});
   });
 
+  it('refuses to copy a source file that is a symlink (defense-in-depth beyond walkFiles)', async () => {
+    // The manifest walker filters symlinks at readdir time via Dirent.isFile(),
+    // so in practice the installer never sees one. This test bypasses the
+    // walker and constructs a manifest whose sourceFile is a symlink to
+    // verify the last-mile lstat guard catches it anyway.
+    const realTarget = await writeSourceFile('real.md', 'attacker-controlled bytes');
+    const linkPath = join(sourceRoot, 'commands', 'evil.md');
+    await fs.mkdir(dirname(linkPath), { recursive: true });
+    await fs.symlink(realTarget, linkPath);
+
+    const lockfile: Lockfile = emptyLockfile();
+    await expect(
+      applyManifest({
+        manifest: buildManifest({ standaloneCommands: [{ name: 'evil', sourceFile: linkPath }] }),
+        sourceUrl: 'https://x/one.git',
+        sourceSha: 'sha-1',
+        claudeHome,
+        lockfile,
+      }),
+    ).rejects.toThrow(/refusing to read symlink/i);
+
+    // Nothing should have been written.
+    await expect(fs.access(join(claudeHome, 'commands/evil.md'))).rejects.toThrow();
+    expect(lockfile.installed).toEqual({});
+  });
+
   it('silently skips files already gone from disk but still drops lockfile entries', async () => {
     const helloSrc = await writeSourceFile('commands/hello.md', 'hello');
     const lockfile: Lockfile = emptyLockfile();

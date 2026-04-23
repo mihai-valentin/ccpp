@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { join, relative } from 'node:path';
+import { readFileSafe } from './fsutil.js';
 import type {
   Lockfile,
   PluginManifest,
@@ -59,8 +60,11 @@ export async function computeChangeset(opts: ComputeChangesetOptions): Promise<C
       changeset.added.push(item.destPath);
       continue;
     }
+    // See fsutil.readFileSafe — refuses to follow symlinks from the source repo.
+    // The destination read stays as fs.readFile: that path is inside the user's
+    // own ~/.claude/ and isn't attacker-controlled.
     const [sourceBytes, destBytes] = await Promise.all([
-      fs.readFile(item.sourceAbsolute),
+      readFileSafe(item.sourceAbsolute),
       fs.readFile(item.destPath),
     ]);
     if (buffersEqual(sourceBytes, destBytes)) {

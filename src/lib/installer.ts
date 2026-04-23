@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
+import { readFileSafe } from './fsutil.js';
 import type {
   Conflict,
   LockInstalledEntry,
@@ -90,7 +91,10 @@ export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyMa
     }
 
     await fs.mkdir(dirname(item.destPath), { recursive: true });
-    const sourceBytes = await fs.readFile(item.sourceAbsolute);
+    // readFileSafe refuses to follow symlinks — source repos are
+    // partially-trusted input and a symlink could redirect the read to
+    // anything on the filesystem, including files Claude Code shouldn't see.
+    const sourceBytes = await readFileSafe(item.sourceAbsolute);
     const destExists = await pathExists(item.destPath);
 
     if (destExists) {
