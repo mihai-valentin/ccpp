@@ -3,11 +3,16 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { cac } from 'cac';
 import { type ConfigAction, runConfig } from './commands/config.js';
-import { type HookScope, runInstallHook } from './commands/install-hook.js';
+import {
+  type HookScope,
+  type InstallHookResult,
+  runInstallHook,
+} from './commands/install-hook.js';
+import { runInstallWizard, type WizardIO, type WizardPlan } from './commands/install-wizard.js';
 import { runStatus } from './commands/status.js';
 import { resolveOverride, runSync } from './commands/sync.js';
 import { runUninstallHook } from './commands/uninstall-hook.js';
-import type { CcppConfig, ConfigSource } from './lib/config.js';
+import { applyConfigSet, type CcppConfig, type ConfigSource } from './lib/config.js';
 import {
   CONFIG_FILENAME,
   configExists,
@@ -19,7 +24,17 @@ import { cloneOrUpdate, parseRepoUrl } from './lib/git.js';
 import { applyManifest, removeFromLockfile } from './lib/installer.js';
 import { LOCKFILE_FILENAME, readLockfile, writeLockfile } from './lib/lockfile.js';
 import { parseManifest } from './lib/manifest.js';
-import { bold, dim, disableColor, green, red, yellow } from './lib/term.js';
+import {
+  bold,
+  dim,
+  disableColor,
+  green,
+  promptChoice,
+  promptLine,
+  promptYesNo,
+  red,
+  yellow,
+} from './lib/term.js';
 import type { Conflict, Lockfile } from './lib/types.js';
 
 /** Exit codes — also documented in `ccpp --help` epilog and docs/exit-codes.md. */
@@ -126,26 +141,49 @@ async function doInit(
   }
 }
 
-async function doInstall(
-  url: string,
-  opts: CommonOpts & { ref?: string; prefer?: boolean; scratch?: boolean },
-): Promise<void> {
-  if (typeof url !== 'string' || url.length === 0) {
-    throw new UserError('ccpp install: missing <url> argument');
-  }
-  const common = commonPaths(opts);
+interface InstallResult {
+  installed: string[];
+  updated: string[];
+  unchanged: string[];
+  conflicts: Conflict[];
+  backups: string[];
+}
 
-  let existing: CcppConfig | null = null;
-  if (!opts.scratch) {
-    try {
-      existing = await readConfig(common.configPath);
-    } catch (err) {
-      throw new UserError((err as Error).message);
-    }
-  }
+interface InstallSourceParams {
+  url: string;
+  ref?: string;
+  common: ResolvedCommon;
+  /** Existing parsed config (may be null on fresh install; never read if scratch). */
+  existing: CcppConfig | null;
+  /** If true, skip writing to ccpp.config.json. */
+  scratch: boolean;
+  /** When true, every conflict resolves in the incoming source's favour (CLI --prefer). */
+  forcePreferIncoming: boolean;
+  /**
+   * Optional interactive fallback when conflicts arise and --prefer wasn't set.
+   * Return a preferredSources map keyed by conflict name → winning source URL,
+   * or null to abort (the caller will raise CollisionError).
+   */
+  resolveConflicts?: (conflicts: Conflict[], incomingUrl: string) => Promise<Record<string, string> | null>;
+}
+
+interface InstallSourceOutcome {
+  synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
+  result: InstallResult;
+  /** The config object as it stands after this install — already written to disk unless scratch. */
+  config: CcppConfig | null;
+}
+
+/**
+ * Clone the source, apply its manifest, and persist lockfile + config. Factored
+ * out of `doInstall` so both the URL-arg path and the wizard path share a
+ * single implementation (same collision handling, same persistence order).
+ */
+async function installSource(params: InstallSourceParams): Promise<InstallSourceOutcome> {
+  const { url, ref, common, existing, scratch, forcePreferIncoming, resolveConflicts } = params;
 
   const cloneOpts: Parameters<typeof cloneOrUpdate>[1] = {};
-  if (opts.ref) cloneOpts.ref = opts.ref;
+  if (ref) cloneOpts.ref = ref;
 
   let synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
   try {
@@ -180,14 +218,25 @@ async function doInstall(
     lastSync: new Date().toISOString(),
   };
 
-  if (result.conflicts.length > 0 && !opts.prefer) {
-    await writeLockfile(common.lockfilePath, lockfile); // still record source pin so state is consistent
+  let conflictsResolved = false;
+
+  if (result.conflicts.length > 0 && forcePreferIncoming) {
+    for (const c of result.conflicts) preferredSources[c.name] = url;
+    conflictsResolved = true;
+  } else if (result.conflicts.length > 0 && resolveConflicts) {
+    const picked = await resolveConflicts(result.conflicts, url);
+    if (picked === null) {
+      await writeLockfile(common.lockfilePath, lockfile); // still record source pin
+      throw new CollisionError(formatCollisionMessage(result.conflicts, url), result.conflicts);
+    }
+    Object.assign(preferredSources, picked);
+    conflictsResolved = true;
+  } else if (result.conflicts.length > 0) {
+    await writeLockfile(common.lockfilePath, lockfile);
     throw new CollisionError(formatCollisionMessage(result.conflicts, url), result.conflicts);
   }
 
-  if (result.conflicts.length > 0 && opts.prefer) {
-    // User opted in to "this install wins for its conflicts" — replay with preferences set.
-    for (const c of result.conflicts) preferredSources[c.name] = url;
+  if (conflictsResolved) {
     const retry = await applyManifest({
       manifest,
       sourceUrl: url,
@@ -205,19 +254,170 @@ async function doInstall(
 
   await writeLockfile(common.lockfilePath, lockfile);
 
-  if (existing && !opts.scratch) {
+  let finalConfig: CcppConfig | null = existing;
+  if (existing && !scratch) {
     if (!existing.sources.some((s) => s.url === url)) {
       const src: ConfigSource = { url };
-      if (opts.ref) src.ref = opts.ref;
+      if (ref) src.ref = ref;
       existing.sources.push(src);
     }
-    if (opts.prefer) {
+    if (forcePreferIncoming || conflictsResolved) {
       existing.preferredSources = preferredSources;
     }
     await writeConfig(common.configPath, existing);
+    finalConfig = existing;
   }
 
+  return { synced, result, config: finalConfig };
+}
+
+async function doInstall(
+  url: string | undefined,
+  opts: CommonOpts & { ref?: string; prefer?: boolean; scratch?: boolean },
+): Promise<void> {
+  if (typeof url !== 'string' || url.length === 0) {
+    await doInstallInteractive(opts);
+    return;
+  }
+  const common = commonPaths(opts);
+
+  let existing: CcppConfig | null = null;
+  if (!opts.scratch) {
+    try {
+      existing = await readConfig(common.configPath);
+    } catch (err) {
+      throw new UserError((err as Error).message);
+    }
+  }
+
+  const installParams: InstallSourceParams = {
+    url,
+    common,
+    existing,
+    scratch: Boolean(opts.scratch),
+    forcePreferIncoming: Boolean(opts.prefer),
+  };
+  if (opts.ref) installParams.ref = opts.ref;
+  // Only offer interactive conflict resolution when stdin is a TTY and the
+  // user did not pre-declare a winner via `--prefer`. Scripts keep their old
+  // exit-3 behavior (CollisionError is thrown if no resolver picks a winner).
+  if (!opts.prefer && isInteractive()) {
+    installParams.resolveConflicts = (conflicts, incoming) =>
+      interactiveConflictResolver(conflicts, incoming);
+  }
+
+  const { synced, result } = await installSource(installParams);
+
   emitInstallSummary(url, synced.sha, synced.ref, result, common);
+}
+
+function isInteractive(): boolean {
+  return Boolean(process.stdin.isTTY) && Boolean(process.stderr.isTTY);
+}
+
+function realWizardIO(): WizardIO {
+  return {
+    out: (line: string) => process.stdout.write(`${line}\n`),
+    promptLine: (message, o) => promptLine(message, o ?? {}),
+    promptChoice: (message, choices, def) => promptChoice(message, choices, def),
+    promptYesNo: (message) => promptYesNo(message),
+  };
+}
+
+/**
+ * Handle `ccpp install` with no URL. Runs the first-time setup wizard when a
+ * config does not yet exist and stdin is a TTY; errors out otherwise with a
+ * hint pointing at the non-interactive form.
+ */
+async function doInstallInteractive(
+  opts: CommonOpts & { ref?: string; prefer?: boolean; scratch?: boolean },
+): Promise<void> {
+  if (opts.ref !== undefined || opts.prefer === true || opts.scratch === true) {
+    throw new UserError(
+      'ccpp install: --ref, --prefer and --scratch all require a <url> argument.',
+    );
+  }
+  const common = commonPaths(opts);
+  if (await configExists(common.configPath)) {
+    throw new UserError(
+      `ccpp.config.json already exists at ${common.configPath}. To add another source, run \`ccpp install <url>\`; to edit settings, use \`ccpp config\`.`,
+    );
+  }
+  if (!isInteractive()) {
+    throw new UserError(
+      'ccpp install: no <url> provided and stdin is not a TTY. Pass a URL: `ccpp install <url>`.',
+    );
+  }
+
+  const io = realWizardIO();
+  const plan = await runInstallWizard(io);
+  if (plan === null) return;
+
+  const config = emptyConfig();
+  if (plan.syncPolicy !== 'pinned') {
+    await applyConfigSet(config, 'syncPolicy', plan.syncPolicy, { autoAcceptAcks: true });
+  }
+  if (plan.autoAccept) {
+    await applyConfigSet(config, 'autoAccept', 'true', { autoAcceptAcks: true });
+  }
+  const initialSrc: ConfigSource = { url: plan.url };
+  if (plan.ref) initialSrc.ref = plan.ref;
+  config.sources.push(initialSrc);
+  await writeConfig(common.configPath, config);
+
+  const installParams: InstallSourceParams = {
+    url: plan.url,
+    common,
+    existing: config,
+    scratch: false,
+    forcePreferIncoming: false,
+    resolveConflicts: (conflicts, incoming) => interactiveConflictResolver(conflicts, incoming),
+  };
+  if (plan.ref) installParams.ref = plan.ref;
+
+  const { synced, result } = await installSource(installParams);
+
+  let hookResult: InstallHookResult | null = null;
+  if (plan.installHook) {
+    hookResult = await runInstallHook({
+      scope: 'user',
+      claudeHome: common.claudeHome,
+      quiet: true,
+    });
+  }
+
+  emitWizardReport({ plan, synced, result, hookResult, common });
+}
+
+/**
+ * Prompt the user to resolve each collision. For each conflict, offer:
+ *   [1] keep the existing source's file
+ *   [2] accept the incoming source's file
+ *   [3] cancel the install
+ * Returns a preferredSources map (conflict name → winning URL) or null if
+ * the user cancelled.
+ */
+async function interactiveConflictResolver(
+  conflicts: Conflict[],
+  incomingUrl: string,
+): Promise<Record<string, string> | null> {
+  const picked: Record<string, string> = {};
+  process.stderr.write(
+    `\n${yellow('!')} ${conflicts.length} collision(s) detected with existing installed files.\n`,
+  );
+  for (const c of conflicts) {
+    process.stderr.write(`\n  ${bold(c.name)}\n`);
+    process.stderr.write(`    existing: ${dim(c.currentSourceUrl)}\n`);
+    process.stderr.write(`    incoming: ${dim(c.incomingSourceUrl)}\n`);
+    const choice = await promptChoice(
+      '  keep existing, use incoming, or cancel?',
+      ['keep', 'use-incoming', 'cancel'] as const,
+      'keep',
+    );
+    if (choice === 'cancel') return null;
+    picked[c.name] = choice === 'keep' ? c.currentSourceUrl : incomingUrl;
+  }
+  return picked;
 }
 
 async function doSync(
@@ -508,6 +708,68 @@ function emitInstallSummary(
   }
 }
 
+interface WizardReportParams {
+  plan: WizardPlan;
+  synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
+  result: InstallResult;
+  hookResult: InstallHookResult | null;
+  common: ResolvedCommon;
+}
+
+/**
+ * Post-wizard report: what landed on disk, effective config, hook status,
+ * followed by a short "what's next" guide for the user's first sync.
+ */
+function emitWizardReport(params: WizardReportParams): void {
+  const { plan, synced, result, hookResult, common } = params;
+  if (common.json) {
+    process.stdout.write(
+      `${JSON.stringify({
+        plan,
+        url: plan.url,
+        sha: synced.sha,
+        ref: synced.ref,
+        ...result,
+        hook: hookResult,
+      })}\n`,
+    );
+    return;
+  }
+  const commands = result.installed.filter((p) => p.includes(`${common.claudeHome}/commands/`));
+  const skillFiles = result.installed.filter((p) => p.includes(`${common.claudeHome}/skills/`));
+  const skillNames = new Set<string>();
+  for (const f of skillFiles) {
+    const rest = f.slice(`${common.claudeHome}/skills/`.length);
+    const name = rest.split(/[\\/]/)[0];
+    if (name) skillNames.add(name);
+  }
+
+  log('', common);
+  log(bold('Install complete'), common);
+  log(`  ${green('✓')} ${plan.url} ${dim(`@${synced.sha.slice(0, 7)} (${synced.ref})`)}`, common);
+  log(`    ${commands.length} command(s), ${skillNames.size} skill(s) written to ${common.claudeHome}`, common);
+  if (result.backups.length > 0) {
+    log(`    ${yellow('!')} ${result.backups.length} file(s) backed up before overwrite`, common);
+  }
+
+  log('', common);
+  log(bold('Config'), common);
+  log(`  syncPolicy:  ${plan.syncPolicy}`, common);
+  log(`  autoAccept:  ${plan.autoAccept}`, common);
+  if (hookResult !== null) {
+    log(`  hook:        ${green('installed')} ${dim(`→ ${hookResult.settingsPath}`)}`, common);
+  } else {
+    log(`  hook:        ${dim('not installed (run `ccpp install-hook` later to enable)')}`, common);
+  }
+
+  log('', common);
+  log(bold("What's next"), common);
+  log(`  ${dim('pull updates:')}       ccpp sync${plan.syncPolicy === 'pinned' ? ' --prefer-latest' : ''}`, common);
+  log(`  ${dim('see state:')}          ccpp status`, common);
+  log(`  ${dim('add another source:')} ccpp install <url>`, common);
+  log(`  ${dim('exit codes / docs:')}  docs/exit-codes.md`, common);
+}
+
 function stripColor(s: string): string {
   // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b\[[0-9;]*m/g, '');
@@ -553,12 +815,18 @@ async function main(argv: string[]): Promise<void> {
 
   attachCommonOptions(
     cli
-      .command('install <url>', 'Clone a source, install its plugins, and update the lockfile')
+      .command(
+        'install [url]',
+        'Clone a source and install it; no <url> → first-time interactive wizard',
+      )
       .option('--ref <ref>', 'Optional ref (branch/tag) to check out')
       .option('--prefer', 'On collision, prefer this install over existing lockfile entries')
       .option('--scratch', 'Ad-hoc install — do not touch ccpp.config.json')
       .action(
-        async (url: string, opts: CommonOpts & { ref?: string; prefer?: boolean; scratch?: boolean }) => {
+        async (
+          url: string | undefined,
+          opts: CommonOpts & { ref?: string; prefer?: boolean; scratch?: boolean },
+        ) => {
           await doInstall(url, opts);
         },
       ),

@@ -137,10 +137,30 @@ describe('ccpp list', () => {
 });
 
 describe('exit codes', () => {
-  it('exits 1 when `install` is called with no URL', async () => {
+  it('exits 1 when `install` is called with no URL on a non-TTY (no fresh-config)', async () => {
+    // Our spawn harness attaches pipes, not a pty — stdin.isTTY is false — so
+    // the wizard refuses and directs the user at the non-interactive form.
     const { code, stderr } = await cli(['install'], { cwd: scratch });
     expect(code).toBe(1);
-    expect(stderr).toMatch(/missing required args|missing <url>/i);
+    expect(stderr).toMatch(/no <url> provided and stdin is not a tty/i);
+  });
+
+  it('exits 1 when `install` is called with no URL but config already exists', async () => {
+    await fs.writeFile(
+      join(scratch, 'ccpp.config.json'),
+      JSON.stringify({ version: 1, scope: 'user', sources: [] }),
+    );
+    const { code, stderr } = await cli(['install'], { cwd: scratch });
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/ccpp\.config\.json already exists/i);
+    // Message must point the user at the non-interactive form, not re-prompt:
+    expect(stderr).toMatch(/ccpp install <url>/);
+  });
+
+  it('rejects --ref / --prefer / --scratch when called without a URL', async () => {
+    const { code, stderr } = await cli(['install', '--ref', 'main'], { cwd: scratch });
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/require a <url>/i);
   });
 
   it('exits 1 when `sync` runs with no ccpp.config.json', async () => {

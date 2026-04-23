@@ -20,11 +20,13 @@ $ echo $?
 0
 ```
 
-### `1` — missing required argument
+### `1` — no URL in a non-interactive context
+
+`ccpp install` with no URL launches the first-time setup wizard on a TTY. In a non-interactive context (CI, piped stdin, `--quiet`), or when `ccpp.config.json` already exists, the wizard refuses and exits 1 with a pointer at the non-interactive form:
 
 ```bash
-$ npx ccpp install
-✗ ccpp install: missing <url> argument
+$ npx ccpp install < /dev/null
+✗ ccpp install: no <url> provided and stdin is not a TTY. Pass a URL: `ccpp install <url>`.
 $ echo $?
 1
 ```
@@ -48,10 +50,15 @@ $ echo $?
 2
 ```
 
-### `3` — collision
+### `3` — collision (non-interactive only)
+
+When two sources supply the same short command or skill name, ccpp's behaviour splits on interactivity:
+
+- **On a TTY:** ccpp prompts per-collision (`keep` / `use-incoming` / `cancel`) and records the winner under `preferredSources` in `ccpp.config.json`. Exits 0 on successful resolution, 1 on `cancel`.
+- **In a non-interactive context** (scripts, CI, piped stdin, `--quiet`): ccpp refuses and exits `3` so the caller can fail loudly. Resolve by pre-declaring the winner via `--prefer`, or by adding `preferredSources` to `ccpp.config.json` ahead of time.
 
 ```bash
-$ npx ccpp install https://github.com/example/overlap.git
+$ npx ccpp install https://github.com/example/overlap.git < /dev/null
 ✗ 1 collision(s) unresolved:
   git-commit: git@bitbucket.org:mktz/ai-plugins-dev.git vs https://github.com/example/overlap.git
 Resolve with: ccpp install https://github.com/example/overlap.git --prefer   # makes this install win

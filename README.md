@@ -25,8 +25,21 @@ Requirements:
 
 ## Quick Start
 
+### Fastest path — interactive wizard (first-time only)
+
+In a fresh working directory, run `ccpp install` with no URL. On a TTY, this launches the first-time setup wizard: it asks for your source URL, sync policy (`pinned`/`latest`), whether to enable `autoAccept`, and whether to install the Claude Code SessionStart hook — then writes `ccpp.config.json`, clones the source, installs its content into `~/.claude/`, registers the hook if requested, and prints a report plus "what's next" guide.
+
 ```bash
-# 1. In your working directory (or a fresh one), create a ccpp.config.json manifest
+mkdir my-ccpp && cd my-ccpp
+npx ccpp install
+```
+
+The wizard only runs on the very first invocation (no `ccpp.config.json` yet). Once you've got one, add further sources with the explicit form below.
+
+### Explicit form — always available, scriptable
+
+```bash
+# 1. Create ccpp.config.json (non-interactive — no prompts, no plan preview)
 npx ccpp init
 
 # 2. Install one or more source repos (private or public)
@@ -191,13 +204,16 @@ ccpp never handles tokens — it delegates to `git`. A non-interactive failure m
 
 ### Collision resolution
 
-If two sources both define `/git-commit`, ccpp refuses the install and exits with code `3`. Resolve with:
+If two sources both define `/git-commit`:
+
+- **On a TTY (manual invocation):** ccpp prompts you per-conflict — keep existing, accept incoming, or cancel. The chosen winner is recorded in `ccpp.config.json` under `preferredSources` so subsequent syncs stay deterministic.
+- **In a non-interactive context (CI, piped stdin, `--quiet`):** ccpp refuses the install and exits with code `3`. Pre-declare the winner to avoid the prompt:
 
 ```bash
-npx ccpp install <url> --prefer <source-name>
+npx ccpp install <url> --prefer
 ```
 
-…which records the preference in `ccpp.config.json` so subsequent syncs are deterministic.
+`--prefer` means "every collision this install produces resolves in this source's favour."
 
 ### Cache reset
 
