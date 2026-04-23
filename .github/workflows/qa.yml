@@ -15,6 +15,10 @@ jobs:
     timeout-minutes: 10
     env:
       CI: 'true'
+      # Opt the action runtime (checkout, setup-node) into Node 24 ahead of
+      # the Sept 2026 deprecation. Unrelated to our build target, which
+      # stays on Node 20 per `engines` in package.json.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
       - uses: actions/checkout@v4
 
