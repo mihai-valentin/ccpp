@@ -115,7 +115,7 @@ function validatePluginJson(raw: unknown, filePath: string): PluginJson {
   }
   const obj = raw as Record<string, unknown>;
 
-  const name = obj['name'];
+  const name = obj.name;
   if (typeof name !== 'string' || name.length === 0) {
     throw new Error(`Invalid plugin.json at ${filePath}: missing required field "name".`);
   }
@@ -125,7 +125,7 @@ function validatePluginJson(raw: unknown, filePath: string): PluginJson {
     );
   }
 
-  const version = obj['version'];
+  const version = obj.version;
   if (typeof version !== 'string' || version.length === 0) {
     throw new Error(`Invalid plugin.json at ${filePath}: missing required field "version".`);
   }
@@ -135,19 +135,19 @@ function validatePluginJson(raw: unknown, filePath: string): PluginJson {
     );
   }
 
-  const description = obj['description'];
+  const description = obj.description;
   if (typeof description !== 'string') {
     throw new Error(`Invalid plugin.json at ${filePath}: missing required field "description".`);
   }
 
-  const author = obj['author'];
+  const author = obj.author;
   let normalizedAuthor: PluginJson['author'];
   if (author === undefined) {
     normalizedAuthor = undefined;
   } else if (typeof author === 'string') {
     normalizedAuthor = author;
   } else if (author && typeof author === 'object' && !Array.isArray(author)) {
-    const authorName = (author as Record<string, unknown>)['name'];
+    const authorName = (author as Record<string, unknown>).name;
     if (typeof authorName !== 'string') {
       throw new Error(
         `Invalid plugin.json at ${filePath}: "author" object must have a "name" string.`,
@@ -160,7 +160,7 @@ function validatePluginJson(raw: unknown, filePath: string): PluginJson {
     );
   }
 
-  const keywords = obj['keywords'];
+  const keywords = obj.keywords;
   let normalizedKeywords: string[] | undefined;
   if (keywords !== undefined) {
     if (!Array.isArray(keywords) || keywords.some((k) => typeof k !== 'string')) {
@@ -237,9 +237,7 @@ function assertUniquePluginNames(plugins: PluginManifest[]): void {
   for (const p of plugins) {
     const prev = seen.get(p.name);
     if (prev !== undefined) {
-      throw new Error(
-        `Duplicate plugin name "${p.name}" — found in both ${prev} and ${p.dir}.`,
-      );
+      throw new Error(`Duplicate plugin name "${p.name}" — found in both ${prev} and ${p.dir}.`);
     }
     seen.set(p.name, p.dir);
   }

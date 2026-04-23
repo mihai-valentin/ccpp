@@ -62,16 +62,14 @@ describe('runInstallHook — user scope', () => {
       settingsPath,
       JSON.stringify({
         hooks: {
-          SessionStart: [
-            { matcher: '*', hooks: [{ type: 'command', command: 'other-tool run' }] },
-          ],
+          SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: 'other-tool run' }] }],
         },
       }),
     );
 
-    await expect(runInstallHook({ scope: 'user', claudeHome, ccppHome, quiet: true })).rejects.toThrow(
-      /another SessionStart hook is already configured/i,
-    );
+    await expect(
+      runInstallHook({ scope: 'user', claudeHome, ccppHome, quiet: true }),
+    ).rejects.toThrow(/another SessionStart hook is already configured/i);
     // Settings file unchanged:
     const s = await readSettings(settingsPath);
     expect((s.hooks as { SessionStart: unknown[] }).SessionStart).toHaveLength(1);
@@ -84,13 +82,17 @@ describe('runInstallHook — user scope', () => {
       settingsPath,
       JSON.stringify({
         hooks: {
-          SessionStart: [
-            { matcher: '*', hooks: [{ type: 'command', command: 'other-tool run' }] },
-          ],
+          SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: 'other-tool run' }] }],
         },
       }),
     );
-    const r = await runInstallHook({ scope: 'user', claudeHome, ccppHome, chain: true, quiet: true });
+    const r = await runInstallHook({
+      scope: 'user',
+      claudeHome,
+      ccppHome,
+      chain: true,
+      quiet: true,
+    });
     expect(r.action).toBe('chained');
 
     const s = await readSettings(settingsPath);
@@ -107,13 +109,17 @@ describe('runInstallHook — user scope', () => {
       settingsPath,
       JSON.stringify({
         hooks: {
-          SessionStart: [
-            { matcher: '*', hooks: [{ type: 'command', command: 'other-tool run' }] },
-          ],
+          SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: 'other-tool run' }] }],
         },
       }),
     );
-    const r = await runInstallHook({ scope: 'user', claudeHome, ccppHome, force: true, quiet: true });
+    const r = await runInstallHook({
+      scope: 'user',
+      claudeHome,
+      ccppHome,
+      force: true,
+      quiet: true,
+    });
     expect(r.action).toBe('replaced');
 
     const s = await readSettings(settingsPath);
@@ -124,7 +130,14 @@ describe('runInstallHook — user scope', () => {
 
   it('--chain + --force together errors', async () => {
     await expect(
-      runInstallHook({ scope: 'user', claudeHome, ccppHome, chain: true, force: true, quiet: true }),
+      runInstallHook({
+        scope: 'user',
+        claudeHome,
+        ccppHome,
+        chain: true,
+        force: true,
+        quiet: true,
+      }),
     ).rejects.toThrow(/mutually exclusive/i);
   });
 });
@@ -146,9 +159,7 @@ describe('runInstallHook — project scope', () => {
       JSON.stringify({
         model: 'sonnet',
         hooks: {
-          UserPromptSubmit: [
-            { matcher: '*', hooks: [{ type: 'command', command: 'other' }] },
-          ],
+          UserPromptSubmit: [{ matcher: '*', hooks: [{ type: 'command', command: 'other' }] }],
         },
       }),
     );
@@ -164,9 +175,9 @@ describe('runInstallHook — project scope', () => {
 
 describe('isCcppBlock', () => {
   it('detects a block whose command contains "ccpp"', () => {
-    expect(
-      isCcppBlock({ hooks: [{ type: 'command', command: 'bash /foo/ccpp/hook.sh' }] }),
-    ).toBe(true);
+    expect(isCcppBlock({ hooks: [{ type: 'command', command: 'bash /foo/ccpp/hook.sh' }] })).toBe(
+      true,
+    );
   });
 
   it('returns false for foreign blocks', () => {

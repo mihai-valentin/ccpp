@@ -3,15 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  type AckKind,
-  applyConfigSet,
   AUTO_ACCEPT_WARNING,
-  type CcppConfig,
+  type AckKind,
   CONFIG_FILENAME,
+  type CcppConfig,
+  POLICY_LATEST_WARNING,
+  applyConfigSet,
   emptyConfig,
   getConfigValue,
   listConfig,
-  POLICY_LATEST_WARNING,
   readConfig,
   requiresAcknowledgement,
   resetConfigValue,
@@ -347,8 +347,8 @@ describe('listConfig', () => {
     };
     const rows = listConfig(config);
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
-    expect(byKey['syncPolicy']).toEqual({ key: 'syncPolicy', value: 'latest', isDefault: false });
-    expect(byKey['autoAccept']).toEqual({ key: 'autoAccept', value: false, isDefault: true });
+    expect(byKey.syncPolicy).toEqual({ key: 'syncPolicy', value: 'latest', isDefault: false });
+    expect(byKey.autoAccept).toEqual({ key: 'autoAccept', value: false, isDefault: true });
     expect(byKey['sources.git@example.com:a/a.git.policy']).toEqual({
       key: 'sources.git@example.com:a/a.git.policy',
       value: undefined,

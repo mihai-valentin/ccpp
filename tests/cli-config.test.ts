@@ -48,7 +48,10 @@ async function ensureBuilt(): Promise<void> {
   if (code !== 0) throw new Error(`npm run build failed: ${stderr}`);
 }
 
-function cli(args: string[], opts: { cwd: string; env?: Record<string, string> }): Promise<RunResult> {
+function cli(
+  args: string[],
+  opts: { cwd: string; env?: Record<string, string> },
+): Promise<RunResult> {
   return run('node', [cliPath, ...args], opts);
 }
 
@@ -109,18 +112,15 @@ describe('ccpp config set / get', () => {
     const init = await cli(['init'], { cwd: scratch });
     expect(init.code).toBe(0);
 
-    const set = await cli(
-      ['config', 'set', 'syncPolicy', 'latest', '--auto-accept'],
-      { cwd: scratch },
-    );
+    const set = await cli(['config', 'set', 'syncPolicy', 'latest', '--auto-accept'], {
+      cwd: scratch,
+    });
     expect(set.code).toBe(0);
 
     const raw = await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8');
     const parsed = JSON.parse(raw);
     expect(parsed.syncPolicy).toBe('latest');
-    expect(parsed.policyAcknowledgedAt).toMatch(
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
-    );
+    expect(parsed.policyAcknowledgedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
     // Subsequent policy set/reset flips don't re-prompt — ack is sticky.
     const roundtrip = await cli(['config', 'set', 'syncPolicy', 'pinned'], { cwd: scratch });
@@ -135,10 +135,9 @@ describe('ccpp config set / get', () => {
 
   it('set autoAccept true --auto-accept persists value AND autoAcceptAcknowledgedAt', async () => {
     await cli(['init'], { cwd: scratch });
-    const set = await cli(
-      ['config', 'set', 'autoAccept', 'true', '--auto-accept'],
-      { cwd: scratch },
-    );
+    const set = await cli(['config', 'set', 'autoAccept', 'true', '--auto-accept'], {
+      cwd: scratch,
+    });
     expect(set.code).toBe(0);
 
     const parsed = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));

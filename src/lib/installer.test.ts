@@ -103,7 +103,9 @@ describe('applyManifest', () => {
     expect(await read(join(claudeHome, 'commands/hello.md'))).toBe('hello body');
     expect(await read(join(claudeHome, 'commands/pr.md'))).toBe('pr body');
     expect(await read(join(claudeHome, 'skills/pr-review/SKILL.md'))).toBe('skill body');
-    expect(await read(join(claudeHome, 'skills/pr-review/references/style.md'))).toBe('style notes');
+    expect(await read(join(claudeHome, 'skills/pr-review/references/style.md'))).toBe(
+      'style notes',
+    );
 
     const entry = lockfile.installed[join(claudeHome, 'commands/hello.md')]!;
     expect(entry.sourceUrl).toBe('https://x/one.git');
@@ -196,7 +198,7 @@ describe('applyManifest', () => {
     expect(lockfile.installed[destPath]!.sourceUrl).toBe('https://a.git');
   });
 
-  it("resolves a collision when preferredSources picks the incoming source (preferred wins, backup created)", async () => {
+  it('resolves a collision when preferredSources picks the incoming source (preferred wins, backup created)', async () => {
     const srcA = await writeSourceFile('a/commands/git-commit.md', 'from-A');
     const srcB = await writeSourceFile('b/commands/git-commit.md', 'from-B');
     const lockfile: Lockfile = emptyLockfile();
@@ -226,7 +228,7 @@ describe('applyManifest', () => {
     expect(lockfile.installed[destPath]!.sourceUrl).toBe('https://b.git');
   });
 
-  it("resolves a collision when preferredSources picks the existing source (incoming silently skipped)", async () => {
+  it('resolves a collision when preferredSources picks the existing source (incoming silently skipped)', async () => {
     const srcA = await writeSourceFile('a/commands/git-commit.md', 'from-A');
     const srcB = await writeSourceFile('b/commands/git-commit.md', 'from-B');
     const lockfile: Lockfile = emptyLockfile();

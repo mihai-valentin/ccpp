@@ -112,8 +112,7 @@ const GIT_CONFLICT_PLUGIN_JSON = `${JSON.stringify(
   {
     name: 'git-conflict-resolver',
     version: '0.1.0',
-    description:
-      'Resolve git merge conflicts thoughtfully using three-way context.',
+    description: 'Resolve git merge conflicts thoughtfully using three-way context.',
     author: { name: 'Example Org AI Tooling' },
     keywords: ['git', 'merge', 'conflict'],
   },
@@ -130,10 +129,8 @@ const AI_PLUGINS_DEV_SHAPE: Record<string, string> = {
   'plugins/ai-pr-workflow/skills/git-commit/SKILL.md': '# git-commit skill\n',
   'plugins/ai-pr-workflow/skills/pr-summary/SKILL.md': '# pr-summary skill\n',
   'plugins/git-conflict-resolver/.claude-plugin/plugin.json': GIT_CONFLICT_PLUGIN_JSON,
-  'plugins/git-conflict-resolver/commands/git-resolve-conflicts.md':
-    '# git-resolve-conflicts\n',
-  'plugins/git-conflict-resolver/skills/resolve-conflicts/SKILL.md':
-    '# resolve-conflicts skill\n',
+  'plugins/git-conflict-resolver/commands/git-resolve-conflicts.md': '# git-resolve-conflicts\n',
+  'plugins/git-conflict-resolver/skills/resolve-conflicts/SKILL.md': '# resolve-conflicts skill\n',
   'plugins/git-conflict-resolver/skills/resolve-conflicts/references/merge-semantics.md':
     '# merge semantics\n',
 };
@@ -309,10 +306,7 @@ describe('ai-plugins-dev shape — end-to-end', () => {
 
     const backups = await listBackups(dirname(fixSession), 'fix-session.md');
     expect(backups.length).toBeGreaterThan(0);
-    const backupContent = await fs.readFile(
-      join(dirname(fixSession), backups[0]!),
-      'utf8',
-    );
+    const backupContent = await fs.readFile(join(dirname(fixSession), backups[0]!), 'utf8');
     expect(backupContent).toBe('# fix-session\n');
 
     const lock = JSON.parse(await fs.readFile(lockfilePath, 'utf8'));
@@ -394,8 +388,7 @@ describe('ai-plugins-dev shape — end-to-end', () => {
     const stillHasGitCommit = Object.entries(
       lock.installed as Record<string, { sourceUrl: string }>,
     ).some(
-      ([p, entry]) =>
-        p.endsWith('commands/git-commit.md') && entry.sourceUrl === primary.bareUrl,
+      ([p, entry]) => p.endsWith('commands/git-commit.md') && entry.sourceUrl === primary.bareUrl,
     );
     expect(stillHasGitCommit).toBe(false);
   }, 30_000);

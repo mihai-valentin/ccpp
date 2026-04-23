@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  runInstallWizard,
-  summarizeInstalledTargets,
   type WizardIO,
   type WizardPlan,
+  runInstallWizard,
+  summarizeInstalledTargets,
 } from './install-wizard.js';
 
 /**
@@ -39,7 +39,7 @@ function makeIO(scripted: Scripted): RecordedIO {
         return opts?.defaultValue ?? '';
       }
       const next = lines.shift() as string;
-      return next.length === 0 ? opts?.defaultValue ?? '' : next;
+      return next.length === 0 ? (opts?.defaultValue ?? '') : next;
     },
     promptChoice: async (message, choices, def) => {
       asked.push(`choice: ${message}`);
@@ -247,7 +247,7 @@ describe('summarizeInstalledTargets', () => {
   it('ignores files outside the claudeHome prefix', () => {
     const { commandCount, skillNames } = summarizeInstalledTargets(
       {
-        installed: [`/somewhere/else/commands/nope.md`, `${home}/commands/yep.md`],
+        installed: ['/somewhere/else/commands/nope.md', `${home}/commands/yep.md`],
         updated: [],
         unchanged: [],
       },

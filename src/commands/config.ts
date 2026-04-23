@@ -1,8 +1,8 @@
 import {
   type AckKind,
-  applyConfigSet,
-  type CcppConfig,
   CONFIG_FILENAME,
+  type CcppConfig,
+  applyConfigSet,
   configExists,
   emptyConfig,
   getConfigValue,

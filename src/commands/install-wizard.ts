@@ -1,8 +1,4 @@
-import {
-  AUTO_ACCEPT_WARNING,
-  POLICY_LATEST_WARNING,
-  type SyncPolicy,
-} from '../lib/config.js';
+import { AUTO_ACCEPT_WARNING, POLICY_LATEST_WARNING, type SyncPolicy } from '../lib/config.js';
 import { parseRepoUrl } from '../lib/git.js';
 import { bold, dim, yellow } from '../lib/term.js';
 
@@ -57,7 +53,9 @@ export async function runInstallWizard(io: WizardIO): Promise<WizardPlan | null>
   io.out(bold('Plan'));
   io.out(`  source:      ${url}${ref !== undefined ? dim(` @ ${ref}`) : ''}`);
   io.out(`  syncPolicy:  ${syncPolicy}`);
-  io.out(`  autoAccept:  ${autoAccept}${syncPolicy === 'pinned' ? dim(' (no effect while pinned — diff-preview stays on)') : ''}`);
+  io.out(
+    `  autoAccept:  ${autoAccept}${syncPolicy === 'pinned' ? dim(' (no effect while pinned — diff-preview stays on)') : ''}`,
+  );
   io.out(`  hook:        ${installHook ? 'install SessionStart hook' : 'skip'}`);
   io.out('');
 
@@ -89,10 +87,9 @@ async function askUrl(io: WizardIO): Promise<string> {
 }
 
 async function askRef(io: WizardIO): Promise<string | undefined> {
-  const raw = await io.promptLine(
-    'Ref (branch/tag/SHA) — leave blank for the repo default:',
-    { defaultValue: '' },
-  );
+  const raw = await io.promptLine('Ref (branch/tag/SHA) — leave blank for the repo default:', {
+    defaultValue: '',
+  });
   const v = raw.trim();
   return v.length === 0 ? undefined : v;
 }

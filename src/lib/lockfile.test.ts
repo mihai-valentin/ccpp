@@ -80,15 +80,35 @@ describe('stableStringify', () => {
         'https://github.com/a.git': { sha: '1', ref: 'main', lastSync: 't1' },
       },
       installed: {
-        '/b.md': { sourceUrl: 'https://github.com/b.git', sourcePath: 'b.md', sourceSha: '2', installedAt: 't2' },
-        '/a.md': { sourceUrl: 'https://github.com/a.git', sourcePath: 'a.md', sourceSha: '1', installedAt: 't1' },
+        '/b.md': {
+          sourceUrl: 'https://github.com/b.git',
+          sourcePath: 'b.md',
+          sourceSha: '2',
+          installedAt: 't2',
+        },
+        '/a.md': {
+          sourceUrl: 'https://github.com/a.git',
+          sourcePath: 'a.md',
+          sourceSha: '1',
+          installedAt: 't1',
+        },
       },
     };
     const b: Lockfile = {
       version: 1,
       installed: {
-        '/a.md': { sourceUrl: 'https://github.com/a.git', sourcePath: 'a.md', sourceSha: '1', installedAt: 't1' },
-        '/b.md': { sourceUrl: 'https://github.com/b.git', sourcePath: 'b.md', sourceSha: '2', installedAt: 't2' },
+        '/a.md': {
+          sourceUrl: 'https://github.com/a.git',
+          sourcePath: 'a.md',
+          sourceSha: '1',
+          installedAt: 't1',
+        },
+        '/b.md': {
+          sourceUrl: 'https://github.com/b.git',
+          sourcePath: 'b.md',
+          sourceSha: '2',
+          installedAt: 't2',
+        },
       },
       sources: {
         'https://github.com/a.git': { sha: '1', ref: 'main', lastSync: 't1' },

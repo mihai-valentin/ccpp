@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { appendSyncLog, readSyncLog, type SyncLogEntry } from './log.js';
+import { type SyncLogEntry, appendSyncLog, readSyncLog } from './log.js';
 
 let scratch: string;
 let logPath: string;
@@ -52,7 +52,10 @@ describe('appendSyncLog + readSyncLog', () => {
 
   it('honours the limit argument and returns the tail', async () => {
     for (let i = 0; i < 10; i++) {
-      await appendSyncLog(entry({ timestamp: `2026-04-23T12:00:${String(i).padStart(2, '0')}Z` }), logPath);
+      await appendSyncLog(
+        entry({ timestamp: `2026-04-23T12:00:${String(i).padStart(2, '0')}Z` }),
+        logPath,
+      );
     }
     const last3 = await readSyncLog(3, logPath);
     expect(last3).toHaveLength(3);

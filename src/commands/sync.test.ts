@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  createLocalGitFixture,
   type LocalGitFixture,
+  createLocalGitFixture,
 } from '../../tests/helpers/local-git-fixture.js';
-import { type CcppConfig, CONFIG_FILENAME } from '../lib/config.js';
+import { CONFIG_FILENAME, type CcppConfig } from '../lib/config.js';
 import { LOCKFILE_FILENAME } from '../lib/lockfile.js';
 import { resolveOverride, runSync } from './sync.js';
 
@@ -32,9 +32,9 @@ beforeEach(async () => {
   for (const key of ['CCPP_CACHE', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM']) {
     savedEnv[key] = process.env[key];
   }
-  process.env['CCPP_CACHE'] = cacheRoot;
-  process.env['GIT_CONFIG_GLOBAL'] = '/dev/null';
-  process.env['GIT_CONFIG_SYSTEM'] = '/dev/null';
+  process.env.CCPP_CACHE = cacheRoot;
+  process.env.GIT_CONFIG_GLOBAL = '/dev/null';
+  process.env.GIT_CONFIG_SYSTEM = '/dev/null';
 });
 
 afterEach(async () => {
@@ -222,9 +222,7 @@ describe('runSync — diff preview and apply gate', () => {
       },
     });
     expect(report.sources[0]!.applyStatus).toBe('skipped-no-prompt');
-    expect(report.sources[0]!.changeset.added).toContain(
-      join(claudeHome, 'commands', 'hello.md'),
-    );
+    expect(report.sources[0]!.changeset.added).toContain(join(claudeHome, 'commands', 'hello.md'));
   }, 30_000);
 
   it('(DA5) verbose expands the proposal to per-file paths', async () => {

@@ -60,9 +60,7 @@ describe('runUninstallHook', () => {
       settingsPath,
       JSON.stringify({
         hooks: {
-          SessionStart: [
-            { matcher: '*', hooks: [{ type: 'command', command: 'other-tool run' }] },
-          ],
+          SessionStart: [{ matcher: '*', hooks: [{ type: 'command', command: 'other-tool run' }] }],
         },
       }),
     );
@@ -85,9 +83,7 @@ describe('runUninstallHook', () => {
       JSON.stringify({
         model: 'sonnet',
         hooks: {
-          UserPromptSubmit: [
-            { matcher: '*', hooks: [{ type: 'command', command: 'other' }] },
-          ],
+          UserPromptSubmit: [{ matcher: '*', hooks: [{ type: 'command', command: 'other' }] }],
         },
       }),
     );

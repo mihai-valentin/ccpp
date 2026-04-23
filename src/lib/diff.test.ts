@@ -150,7 +150,11 @@ describe('computeChangeset', () => {
     await writeDestFile('commands/same.md', 'same');
     const lockfile: Lockfile = emptyLockfile();
     const gone = join(claudeHome, 'commands/gone.md');
-    for (const dest of [join(claudeHome, 'commands/mod.md'), join(claudeHome, 'commands/same.md'), gone]) {
+    for (const dest of [
+      join(claudeHome, 'commands/mod.md'),
+      join(claudeHome, 'commands/same.md'),
+      gone,
+    ]) {
       lockfile.installed[dest] = {
         sourceUrl: 'https://x/one.git',
         sourcePath: dest.slice(claudeHome.length + 1),

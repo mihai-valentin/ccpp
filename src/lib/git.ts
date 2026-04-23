@@ -71,7 +71,7 @@ function splitOwnerRepo(path: string, originalUrl: string): { owner: string; rep
 }
 
 export function defaultCacheRoot(): string {
-  const override = process.env['CCPP_CACHE'];
+  const override = process.env.CCPP_CACHE;
   if (override && override.length > 0) return override;
   return join(homedir(), '.ccpp', 'cache');
 }

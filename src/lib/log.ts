@@ -25,7 +25,7 @@ export interface SyncLogEntry {
  * Kept as a function so tests (and the hook script) can override via env.
  */
 export function defaultLogPath(): string {
-  const ccppHome = process.env['CCPP_HOME'];
+  const ccppHome = process.env.CCPP_HOME;
   if (ccppHome && ccppHome.length > 0) return join(ccppHome, 'sync.log');
   return join(homedir(), '.ccpp', 'sync.log');
 }

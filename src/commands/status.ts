@@ -2,11 +2,11 @@ import {
   CONFIG_FILENAME,
   type CcppConfig,
   type ConfigSource,
-  readConfig,
   type SyncPolicy,
+  readConfig,
 } from '../lib/config.js';
-import { defaultLogPath, readSyncLog, type SyncLogEntry } from '../lib/log.js';
 import { readLockfile } from '../lib/lockfile.js';
+import { type SyncLogEntry, defaultLogPath, readSyncLog } from '../lib/log.js';
 import { bold, dim, green, red, yellow } from '../lib/term.js';
 import type { Lockfile } from '../lib/types.js';
 
@@ -149,7 +149,9 @@ function emitHuman(report: StatusReport): void {
           ? e.error.slice(0, 60)
           : '';
       const source = e.sourceUrl ? ` ${dim(e.sourceUrl)}` : '';
-      process.stdout.write(`  ${icon} ${e.timestamp}  ${e.trigger}${source}  ${summary}\n`.trimEnd() + '\n');
+      process.stdout.write(
+        `${`  ${icon} ${e.timestamp}  ${e.trigger}${source}  ${summary}\n`.trimEnd()}\n`,
+      );
     }
   }
 }

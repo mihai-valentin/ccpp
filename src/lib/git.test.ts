@@ -2,14 +2,11 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createLocalGitFixture, type LocalGitFixture } from '../../tests/helpers/local-git-fixture.js';
 import {
-  cachePathFor,
-  clearCache,
-  cloneOrUpdate,
-  parseRepoUrl,
-  runGit,
-} from './git.js';
+  type LocalGitFixture,
+  createLocalGitFixture,
+} from '../../tests/helpers/local-git-fixture.js';
+import { cachePathFor, clearCache, cloneOrUpdate, parseRepoUrl, runGit } from './git.js';
 
 describe('parseRepoUrl', () => {
   it('parses an SSH scp-form URL (git@host:owner/repo.git)', () => {
@@ -157,13 +154,13 @@ describe('runGit environment', () => {
     const shim = join(shimDir, 'git');
     await fs.writeFile(shim, '#!/bin/sh\nprintf "%s" "$GIT_TERMINAL_PROMPT"\n');
     await fs.chmod(shim, 0o755);
-    const originalPath = process.env['PATH'];
-    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${shimDir}:${originalPath ?? ''}`;
     try {
       const { stdout } = await runGit(['noop'], { cwd: undefined });
       expect(stdout).toBe('0');
     } finally {
-      process.env['PATH'] = originalPath;
+      process.env.PATH = originalPath;
       await fs.rm(shimDir, { recursive: true, force: true });
     }
   });

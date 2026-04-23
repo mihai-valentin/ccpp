@@ -2,9 +2,9 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type CcppConfig, CONFIG_FILENAME } from '../lib/config.js';
-import { appendSyncLog, type SyncLogEntry } from '../lib/log.js';
+import { CONFIG_FILENAME, type CcppConfig } from '../lib/config.js';
 import { LOCKFILE_FILENAME } from '../lib/lockfile.js';
+import { type SyncLogEntry, appendSyncLog } from '../lib/log.js';
 import type { Lockfile } from '../lib/types.js';
 import { runStatus } from './status.js';
 
@@ -103,10 +103,7 @@ describe('runStatus', () => {
     await writeConfig({
       version: 1,
       scope: 'user',
-      sources: [
-        { url: 'https://example.com/skip.git' },
-        { url: 'https://example.com/fail.git' },
-      ],
+      sources: [{ url: 'https://example.com/skip.git' }, { url: 'https://example.com/fail.git' }],
     });
     await writeLock({
       version: 1,

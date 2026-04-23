@@ -197,7 +197,7 @@ describe('v0.1.1 — end-to-end auto-update flow', () => {
       GIT_CONFIG_GLOBAL: '/dev/null',
       GIT_CONFIG_SYSTEM: '/dev/null',
       NO_COLOR: '1',
-      PATH: `${binDir}:${process.env['PATH'] ?? ''}`,
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
     };
 
     // Bare repo with ai-plugins-dev-shape fixture.
@@ -287,9 +287,9 @@ describe('v0.1.1 — end-to-end auto-update flow', () => {
     expect(hook.code).toBe(0); // hook ALWAYS exits 0
 
     // New file landed on disk.
-    expect(
-      await fs.readFile(join(claudeHome, 'commands/new-cmd.md'), 'utf8'),
-    ).toBe('# new-cmd body\n');
+    expect(await fs.readFile(join(claudeHome, 'commands/new-cmd.md'), 'utf8')).toBe(
+      '# new-cmd body\n',
+    );
 
     // Lockfile advanced to the new SHA.
     const lock = JSON.parse(await fs.readFile(lockfilePath, 'utf8'));
@@ -347,9 +347,7 @@ describe('v0.1.1 — end-to-end auto-update flow', () => {
 
     // sync.log has a 'skipped' entry for this source:
     const entries = await readNdjson(syncLogPath);
-    const skipEntries = entries.filter(
-      (e) => e.outcome === 'skipped' && e.sourceUrl === bareUrl,
-    );
+    const skipEntries = entries.filter((e) => e.outcome === 'skipped' && e.sourceUrl === bareUrl);
     expect(skipEntries.length).toBeGreaterThan(0);
   }, 30_000);
 

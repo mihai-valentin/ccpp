@@ -2,14 +2,14 @@ import {
   CONFIG_FILENAME,
   type CcppConfig,
   type ConfigSource,
-  readConfig,
   type SyncPolicy,
+  readConfig,
 } from '../lib/config.js';
 import { type Changeset, computeChangeset, hasChanges } from '../lib/diff.js';
 import { cloneOrUpdate } from '../lib/git.js';
 import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
-import { appendSyncLog, type SyncOutcome, type SyncTrigger } from '../lib/log.js';
+import { type SyncOutcome, type SyncTrigger, appendSyncLog } from '../lib/log.js';
 import { parseManifest } from '../lib/manifest.js';
 import { dim, green, promptYesNo, yellow } from '../lib/term.js';
 import type { Conflict } from '../lib/types.js';
@@ -246,11 +246,7 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
         lastSync: new Date().toISOString(),
       };
 
-      const current = new Set([
-        ...result.installed,
-        ...result.updated,
-        ...result.unchanged,
-      ]);
+      const current = new Set([...result.installed, ...result.updated, ...result.unchanged]);
       const removed = priorDests.filter((p) => !current.has(p));
 
       perSource.push({

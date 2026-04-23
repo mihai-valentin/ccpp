@@ -3,8 +3,8 @@ import { createInterface } from 'node:readline';
 const CSI = '\x1b[';
 
 function colorEnabled(): boolean {
-  if (process.env['NO_COLOR']) return false;
-  if (process.env['CCPP_NO_COLOR']) return false;
+  if (process.env.NO_COLOR) return false;
+  if (process.env.CCPP_NO_COLOR) return false;
   return Boolean(process.stdout.isTTY);
 }
 
@@ -19,7 +19,7 @@ export const dim = wrap('2', '22');
 export const bold = wrap('1', '22');
 
 export function disableColor(): void {
-  process.env['CCPP_NO_COLOR'] = '1';
+  process.env.CCPP_NO_COLOR = '1';
 }
 
 /**
@@ -52,10 +52,7 @@ export function promptYesNo(message: string): Promise<boolean> {
  * was supplied, that default is returned. On EOF with no default, resolves
  * to an empty string — callers validate/retry.
  */
-export function promptLine(
-  message: string,
-  opts: { defaultValue?: string } = {},
-): Promise<string> {
+export function promptLine(message: string, opts: { defaultValue?: string } = {}): Promise<string> {
   return new Promise((resolve) => {
     const suffix = opts.defaultValue !== undefined ? ` [${opts.defaultValue}]` : '';
     process.stderr.write(`${message}${suffix} `);

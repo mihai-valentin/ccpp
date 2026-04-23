@@ -1,0 +1,31 @@
+name: QA
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: CI gate (install, build, typecheck, test, pack-check)
+        run: make ci
+
+      - name: Lint (advisory — does not fail the pipeline)
+        run: make lint
+        continue-on-error: true

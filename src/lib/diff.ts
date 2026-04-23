@@ -1,13 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { join, relative } from 'node:path';
 import { readFileSafe } from './fsutil.js';
-import type {
-  Lockfile,
-  PluginManifest,
-  ResolvedManifest,
-  Skill,
-  SlashCommand,
-} from './types.js';
+import type { Lockfile, PluginManifest, ResolvedManifest, Skill, SlashCommand } from './types.js';
 
 /**
  * Dry-run diff of what an `applyManifest` invocation would do for a single
@@ -87,9 +81,7 @@ export async function computeChangeset(opts: ComputeChangesetOptions): Promise<C
 
 export function hasChanges(changeset: Changeset): boolean {
   return (
-    changeset.added.length > 0 ||
-    changeset.modified.length > 0 ||
-    changeset.removed.length > 0
+    changeset.added.length > 0 || changeset.modified.length > 0 || changeset.removed.length > 0
   );
 }
 

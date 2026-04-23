@@ -18,8 +18,7 @@ export async function readFileSafe(path: string): Promise<Buffer> {
   const stat = await fs.lstat(path);
   if (stat.isSymbolicLink()) {
     throw new Error(
-      `Refusing to read symlink: ${path}. ccpp does not follow symlinks from source repos — ` +
-        'this would allow a source to leak files from elsewhere on the filesystem into ~/.claude/.',
+      `Refusing to read symlink: ${path}. ccpp does not follow symlinks from source repos — this would allow a source to leak files from elsewhere on the filesystem into ~/.claude/.`,
     );
   }
   return fs.readFile(path);

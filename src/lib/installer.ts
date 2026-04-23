@@ -214,11 +214,7 @@ function pushSkill(
   }
 }
 
-function lockEntry(
-  item: PlannedFile,
-  opts: ApplyManifestOptions,
-  now: string,
-): LockInstalledEntry {
+function lockEntry(item: PlannedFile, opts: ApplyManifestOptions, now: string): LockInstalledEntry {
   return {
     sourceUrl: opts.sourceUrl,
     sourcePath: item.sourceRelative,

@@ -3,25 +3,21 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { cac } from 'cac';
 import { type ConfigAction, runConfig } from './commands/config.js';
+import { type HookScope, type InstallHookResult, runInstallHook } from './commands/install-hook.js';
 import {
-  type HookScope,
-  type InstallHookResult,
-  runInstallHook,
-} from './commands/install-hook.js';
-import {
-  runInstallWizard,
-  summarizeInstalledTargets,
   type WizardIO,
   type WizardPlan,
+  runInstallWizard,
+  summarizeInstalledTargets,
 } from './commands/install-wizard.js';
 import { runStatus } from './commands/status.js';
 import { resolveOverride, runSync } from './commands/sync.js';
 import { runUninstallHook } from './commands/uninstall-hook.js';
 import {
-  applyConfigSet,
   type CcppConfig,
   type ConfigSource,
   POLICY_LATEST_WARNING,
+  applyConfigSet,
   requiresAcknowledgement,
 } from './lib/config.js';
 import {
@@ -87,9 +83,7 @@ function commonPaths(opts: CommonOpts): ResolvedCommon {
   if (opts.noColor) disableColor();
   return {
     claudeHome: opts.claudeHome ? resolve(opts.claudeHome) : join(homedir(), '.claude'),
-    configPath: opts.config
-      ? resolve(opts.config)
-      : resolve(process.cwd(), CONFIG_FILENAME),
+    configPath: opts.config ? resolve(opts.config) : resolve(process.cwd(), CONFIG_FILENAME),
     lockfilePath: opts.lockfile
       ? resolve(opts.lockfile)
       : resolve(process.cwd(), LOCKFILE_FILENAME),
@@ -111,9 +105,7 @@ function readPkgVersion(): string {
   }
 }
 
-function attachCommonOptions<T extends { option: (flag: string, desc: string) => T }>(
-  cmd: T,
-): T {
+function attachCommonOptions<T extends { option: (flag: string, desc: string) => T }>(cmd: T): T {
   cmd
     .option('--claude-home <path>', 'Override ~/.claude')
     .option('--config <path>', `Override ./${CONFIG_FILENAME}`)
@@ -143,7 +135,7 @@ async function doInit(
   if (common.json) {
     process.stdout.write(`${JSON.stringify({ configPath: common.configPath, config })}\n`);
   } else {
-    log(green('✓') + ` wrote ${common.configPath}`, common);
+    log(`${green('✓')} wrote ${common.configPath}`, common);
     if (opts.source) {
       log(`  first source: ${opts.source}${opts.ref ? `@${opts.ref}` : ''}`, common);
     } else {
@@ -175,7 +167,10 @@ interface InstallSourceParams {
    * Return a preferredSources map keyed by conflict name → winning source URL,
    * or null to abort (the caller will raise CollisionError).
    */
-  resolveConflicts?: (conflicts: Conflict[], incomingUrl: string) => Promise<Record<string, string> | null>;
+  resolveConflicts?: (
+    conflicts: Conflict[],
+    incomingUrl: string,
+  ) => Promise<Record<string, string> | null>;
 }
 
 interface InstallSourceOutcome {
@@ -211,8 +206,9 @@ async function installSource(params: InstallSourceParams): Promise<InstallSource
     throw new UserError(err.message);
   });
 
-  const preferredSources: Record<string, string> =
-    existing?.preferredSources ? { ...existing.preferredSources } : {};
+  const preferredSources: Record<string, string> = existing?.preferredSources
+    ? { ...existing.preferredSources }
+    : {};
 
   const result = await applyManifest({
     manifest,
@@ -349,11 +345,7 @@ async function doInstall(
  * Y); otherwise, on a TTY the warning is printed and a [y/N] prompt fires,
  * and on a non-TTY we error out with a hint pointing at --yes.
  */
-async function applyPreferLatest(
-  config: CcppConfig,
-  url: string,
-  yes: boolean,
-): Promise<void> {
+async function applyPreferLatest(config: CcppConfig, url: string, yes: boolean): Promise<void> {
   const key = `sources.${url}.policy`;
   const ackKind = requiresAcknowledgement(config, key, 'latest');
   if (ackKind !== null) process.stderr.write(`${POLICY_LATEST_WARNING}\n`);
@@ -591,7 +583,10 @@ async function doList(opts: CommonOpts): Promise<void> {
   }
 
   const header = [bold('NAME'), bold('TYPE'), bold('SOURCE'), bold('SHA'), bold('LAST_SYNC')];
-  const table = [header, ...rows.map((r) => [r.name, r.type, r.sourceUrl, r.sha.slice(0, 7), r.lastSync])];
+  const table = [
+    header,
+    ...rows.map((r) => [r.name, r.type, r.sourceUrl, r.sha.slice(0, 7), r.lastSync]),
+  ];
   const widths = table[0]!.map((_, i) =>
     Math.max(...table.map((row) => stripColor(row[i] ?? '').length)),
   );
@@ -744,14 +739,10 @@ function lockfileRows(lockfile: Lockfile, claudeHome: string): ListRow[] {
 function formatCollisionMessage(conflicts: Conflict[], incomingSource: string | null): string {
   const lines = [`${conflicts.length} collision(s) unresolved:`];
   for (const c of conflicts) {
-    lines.push(
-      `  ${c.name}: ${c.currentSourceUrl} vs ${c.incomingSourceUrl}`,
-    );
+    lines.push(`  ${c.name}: ${c.currentSourceUrl} vs ${c.incomingSourceUrl}`);
   }
   if (incomingSource) {
-    lines.push(
-      `Resolve with: ccpp install ${incomingSource} --prefer   # makes this install win`,
-    );
+    lines.push(`Resolve with: ccpp install ${incomingSource} --prefer   # makes this install win`);
   } else {
     lines.push(
       'Resolve by adding `preferredSources` entries to ccpp.config.json, then re-running sync.',
@@ -843,24 +834,24 @@ function emitWizardReport(params: WizardReportParams): void {
 
   log('', common);
   log(bold("What's next"), common);
-  log(`  ${dim('pull updates:')}       ccpp sync${plan.syncPolicy === 'pinned' ? ' --prefer-latest' : ''}`, common);
+  log(
+    `  ${dim('pull updates:')}       ccpp sync${plan.syncPolicy === 'pinned' ? ' --prefer-latest' : ''}`,
+    common,
+  );
   log(`  ${dim('see state:')}          ccpp status`, common);
   log(`  ${dim('add another source:')} ccpp install <url>`, common);
   log(`  ${dim('exit codes / docs:')}  docs/exit-codes.md`, common);
 }
 
 function stripColor(s: string): string {
-  // eslint-disable-next-line no-control-regex
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping — \x1b is load-bearing.
   return s.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 function classifyAndExit(err: unknown): never {
   let code: number = EXIT.ENV;
   let message: string;
-  if (
-    err instanceof Error &&
-    typeof (err as { exitCode?: unknown }).exitCode === 'number'
-  ) {
+  if (err instanceof Error && typeof (err as { exitCode?: unknown }).exitCode === 'number') {
     // Duck-typed: recognizes error classes defined in sub-modules (e.g. commands/sync.ts)
     // without requiring a shared base class across module boundaries.
     code = (err as unknown as { exitCode: number }).exitCode;
@@ -927,7 +918,10 @@ async function main(argv: string[]): Promise<void> {
       .option('--update', 'Deprecated alias for --prefer-latest')
       .option('--auto-accept', 'Skip the diff-preview prompt for this run')
       .option('--verbose', 'Expand the diff-preview summary to per-file paths')
-      .option('--trigger <kind>', '(internal) Tag log entries with manual|hook — used by the SessionStart hook')
+      .option(
+        '--trigger <kind>',
+        '(internal) Tag log entries with manual|hook — used by the SessionStart hook',
+      )
       .action(
         async (
           opts: CommonOpts & {
@@ -945,28 +939,35 @@ async function main(argv: string[]): Promise<void> {
   );
 
   attachCommonOptions(
-    cli.command('list', 'List commands and skills currently installed').action(async (opts: CommonOpts) => {
-      await doList(opts);
-    }),
-  );
-
-  attachCommonOptions(
-    cli.command('uninstall <name>', 'Uninstall a source (by URL or repo name)').action(
-      async (name: string, opts: CommonOpts) => {
-        await doUninstall(name, opts);
-      },
-    ),
+    cli
+      .command('list', 'List commands and skills currently installed')
+      .action(async (opts: CommonOpts) => {
+        await doList(opts);
+      }),
   );
 
   attachCommonOptions(
     cli
-      .command('install-hook', 'Install the Claude Code SessionStart hook (runs `ccpp sync` at session start)')
+      .command('uninstall <name>', 'Uninstall a source (by URL or repo name)')
+      .action(async (name: string, opts: CommonOpts) => {
+        await doUninstall(name, opts);
+      }),
+  );
+
+  attachCommonOptions(
+    cli
+      .command(
+        'install-hook',
+        'Install the Claude Code SessionStart hook (runs `ccpp sync` at session start)',
+      )
       .option('--project', 'Write to ./.claude/settings.json instead of user scope')
       .option('--chain', 'Append ccpp after an existing SessionStart hook')
       .option('--force', 'Replace any existing SessionStart hooks with ccpp')
-      .action(async (opts: CommonOpts & { project?: boolean; chain?: boolean; force?: boolean }) => {
-        await doInstallHook(opts);
-      }),
+      .action(
+        async (opts: CommonOpts & { project?: boolean; chain?: boolean; force?: boolean }) => {
+          await doInstallHook(opts);
+        },
+      ),
   );
 
   attachCommonOptions(
@@ -979,17 +980,20 @@ async function main(argv: string[]): Promise<void> {
   );
 
   attachCommonOptions(
-    cli.command('status', 'Show per-source sync state and recent log entries').action(
-      async (opts: CommonOpts) => {
+    cli
+      .command('status', 'Show per-source sync state and recent log entries')
+      .action(async (opts: CommonOpts) => {
         await doStatus(opts);
-      },
-    ),
+      }),
   );
 
   attachCommonOptions(
     cli
       .command('config <action> [key] [value]', 'Manage ccpp configuration')
-      .option('--auto-accept', 'On `set`, skip the first-enable warning and record the acknowledgement')
+      .option(
+        '--auto-accept',
+        'On `set`, skip the first-enable warning and record the acknowledgement',
+      )
       .action(
         async (
           action: string,

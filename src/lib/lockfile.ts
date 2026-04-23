@@ -83,16 +83,16 @@ function validateLockfile(raw: unknown, path: string): Lockfile {
     throw new Error(`Invalid lockfile ${path}: expected a JSON object.`);
   }
   const obj = raw as Record<string, unknown>;
-  if (obj['version'] !== 1) {
+  if (obj.version !== 1) {
     throw new Error(
-      `Unsupported lockfile version at ${path}: expected 1, got ${JSON.stringify(obj['version'])}.`,
+      `Unsupported lockfile version at ${path}: expected 1, got ${JSON.stringify(obj.version)}.`,
     );
   }
-  const sources = obj['sources'];
+  const sources = obj.sources;
   if (!sources || typeof sources !== 'object' || Array.isArray(sources)) {
     throw new Error(`Invalid lockfile ${path}: "sources" must be an object.`);
   }
-  const installed = obj['installed'];
+  const installed = obj.installed;
   if (!installed || typeof installed !== 'object' || Array.isArray(installed)) {
     throw new Error(`Invalid lockfile ${path}: "installed" must be an object.`);
   }

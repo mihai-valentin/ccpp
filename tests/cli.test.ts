@@ -49,7 +49,10 @@ async function ensureBuilt(): Promise<void> {
   if (code !== 0) throw new Error(`npm run build failed: ${stderr}`);
 }
 
-function cli(args: string[], opts: { cwd: string; env?: Record<string, string> }): Promise<RunResult> {
+function cli(
+  args: string[],
+  opts: { cwd: string; env?: Record<string, string> },
+): Promise<RunResult> {
   return run('node', [cliPath, ...args], opts);
 }
 
@@ -75,12 +78,7 @@ describe('ccpp --help', () => {
       expect(stdout).toContain(sub);
     }
     expect(stdout).toContain('Exit codes:');
-    for (const line of [
-      '0  success',
-      '1  user error',
-      '2  environment error',
-      '3  collision',
-    ]) {
+    for (const line of ['0  success', '1  user error', '2  environment error', '3  collision']) {
       expect(stdout).toContain(line);
     }
   });
@@ -91,9 +89,7 @@ describe('ccpp init', () => {
     const { code, stdout } = await cli(['init'], { cwd: scratch });
     expect(code).toBe(0);
     expect(stdout).toContain('ccpp.config.json');
-    const parsed = JSON.parse(
-      await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'),
-    );
+    const parsed = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
     expect(parsed).toEqual({ scope: 'user', sources: [], version: 1 });
   });
 
@@ -103,9 +99,7 @@ describe('ccpp init', () => {
       { cwd: scratch },
     );
     expect(code).toBe(0);
-    const parsed = JSON.parse(
-      await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'),
-    );
+    const parsed = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
     expect(parsed.sources).toEqual([{ ref: 'main', url: 'https://example.com/foo.git' }]);
   });
 
@@ -202,10 +196,10 @@ describe('exit codes', () => {
     const claudeHome = join(scratch, 'claude');
     const cacheRoot = join(scratch, 'cache');
     const bogus = `file://${join(scratch, 'does-not-exist.git')}`;
-    const { code, stderr } = await cli(
-      ['install', bogus, '--claude-home', claudeHome],
-      { cwd: scratch, env: { CCPP_CACHE: cacheRoot } },
-    );
+    const { code, stderr } = await cli(['install', bogus, '--claude-home', claudeHome], {
+      cwd: scratch,
+      env: { CCPP_CACHE: cacheRoot },
+    });
     expect(code).toBe(2);
     expect(stderr.length).toBeGreaterThan(0);
   });
@@ -224,9 +218,7 @@ describe('exit codes', () => {
       );
       expect(code).toBe(0);
 
-      const cfg = JSON.parse(
-        await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'),
-      );
+      const cfg = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
       expect(cfg.sources).toEqual([{ policy: 'latest', url: fx.url }]);
       expect(typeof cfg.policyAcknowledgedAt).toBe('string');
       expect(cfg.policyAcknowledgedAt.length).toBeGreaterThan(0);
@@ -250,22 +242,19 @@ describe('exit codes', () => {
       const cacheRoot = join(scratch, 'cache');
       const env = { CCPP_CACHE: cacheRoot };
 
-      const first = await cli(
-        ['install', a.url, '--claude-home', claudeHome],
-        { cwd: scratch, env },
-      );
+      const first = await cli(['install', a.url, '--claude-home', claudeHome], {
+        cwd: scratch,
+        env,
+      });
       expect(first.code).toBe(0);
 
-      const second = await cli(
-        ['install', b.url, '--yes', '--claude-home', claudeHome],
-        { cwd: scratch, env },
-      );
+      const second = await cli(['install', b.url, '--yes', '--claude-home', claudeHome], {
+        cwd: scratch,
+        env,
+      });
       expect(second.code).toBe(0);
 
-      const overlap = await fs.readFile(
-        join(claudeHome, 'commands', 'overlap.md'),
-        'utf8',
-      );
+      const overlap = await fs.readFile(join(claudeHome, 'commands', 'overlap.md'), 'utf8');
       expect(overlap.replace(/\r\n/g, '\n')).toBe('# from B\n');
     } finally {
       await a.cleanup();
@@ -286,16 +275,16 @@ describe('exit codes', () => {
       const cacheRoot = join(scratch, 'cache');
       const env = { CCPP_CACHE: cacheRoot };
 
-      const first = await cli(
-        ['install', a.url, '--claude-home', claudeHome],
-        { cwd: scratch, env },
-      );
+      const first = await cli(['install', a.url, '--claude-home', claudeHome], {
+        cwd: scratch,
+        env,
+      });
       expect(first.code).toBe(0);
 
-      const second = await cli(
-        ['install', b.url, '--claude-home', claudeHome],
-        { cwd: scratch, env },
-      );
+      const second = await cli(['install', b.url, '--claude-home', claudeHome], {
+        cwd: scratch,
+        env,
+      });
       expect(second.code).toBe(3);
       expect(second.stderr).toMatch(/collision/i);
     } finally {

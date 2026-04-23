@@ -50,10 +50,12 @@ async function writeSettings(path: string, settings: ClaudeSettings): Promise<vo
   await fs.writeFile(path, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
 }
 
-export async function runUninstallHook(
-  opts: RunUninstallHookOpts,
-): Promise<UninstallHookResult> {
-  const settingsPath = settingsPathFor({ scope: opts.scope, ...(opts.claudeHome !== undefined && { claudeHome: opts.claudeHome }), ...(opts.cwd !== undefined && { cwd: opts.cwd }) });
+export async function runUninstallHook(opts: RunUninstallHookOpts): Promise<UninstallHookResult> {
+  const settingsPath = settingsPathFor({
+    scope: opts.scope,
+    ...(opts.claudeHome !== undefined && { claudeHome: opts.claudeHome }),
+    ...(opts.cwd !== undefined && { cwd: opts.cwd }),
+  });
   const settings = await readSettings(settingsPath);
 
   const emit = (result: UninstallHookResult): UninstallHookResult => {
@@ -61,9 +63,13 @@ export async function runUninstallHook(
       process.stdout.write(`${JSON.stringify(result)}\n`);
     } else if (!opts.quiet) {
       if (result.removed) {
-        process.stdout.write(`${green('✓')} removed ccpp SessionStart hook from ${result.settingsPath}\n`);
+        process.stdout.write(
+          `${green('✓')} removed ccpp SessionStart hook from ${result.settingsPath}\n`,
+        );
       } else {
-        process.stdout.write(`${yellow('!')} no ccpp hook found in ${result.settingsPath} ${dim('(already uninstalled)')}\n`);
+        process.stdout.write(
+          `${yellow('!')} no ccpp hook found in ${result.settingsPath} ${dim('(already uninstalled)')}\n`,
+        );
       }
     }
     return result;

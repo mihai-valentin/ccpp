@@ -73,7 +73,7 @@ exit 0
 `;
 
 export function defaultCcppHome(): string {
-  const env = process.env['CCPP_HOME'];
+  const env = process.env.CCPP_HOME;
   if (env && env.length > 0) return env;
   return join(homedir(), '.ccpp');
 }
@@ -132,9 +132,7 @@ function makeCcppBlock(scriptPath: string): SessionStartBlock {
 
 export async function runInstallHook(opts: RunInstallHookOpts): Promise<InstallHookResult> {
   if (opts.chain === true && opts.force === true) {
-    throw new UserError(
-      'ccpp install-hook: --chain and --force are mutually exclusive; pick one.',
-    );
+    throw new UserError('ccpp install-hook: --chain and --force are mutually exclusive; pick one.');
   }
 
   const settingsPath = settingsPathFor(opts);
@@ -144,7 +142,8 @@ export async function runInstallHook(opts: RunInstallHookOpts): Promise<InstallH
   const ccppBlock = makeCcppBlock(scriptPath);
 
   settings.hooks ??= {};
-  const blocks = (settings.hooks.SessionStart ??= []);
+  settings.hooks.SessionStart ??= [];
+  const blocks = settings.hooks.SessionStart;
 
   const existingCcppIdx = blocks.findIndex(isCcppBlock);
   let action: InstallHookResult['action'];
@@ -173,13 +172,14 @@ export async function runInstallHook(opts: RunInstallHookOpts): Promise<InstallH
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } else if (!opts.quiet) {
-    const verb = action === 'created'
-      ? 'registered'
-      : action === 'updated'
-        ? 'updated (already present)'
-        : action === 'chained'
-          ? 'appended (chained after existing hook)'
-          : 'replaced existing hook';
+    const verb =
+      action === 'created'
+        ? 'registered'
+        : action === 'updated'
+          ? 'updated (already present)'
+          : action === 'chained'
+            ? 'appended (chained after existing hook)'
+            : 'replaced existing hook';
     process.stdout.write(`${green('✓')} ${verb}\n`);
     process.stdout.write(`  ${dim('settings:')} ${settingsPath}\n`);
     process.stdout.write(`  ${dim('script:  ')} ${scriptPath}\n`);

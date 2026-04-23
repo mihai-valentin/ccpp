@@ -81,12 +81,12 @@ function validate(raw: unknown, path: string): CcppConfig {
     throw new Error(`Invalid config ${path}: expected a JSON object.`);
   }
   const obj = raw as Record<string, unknown>;
-  if (obj['version'] !== 1) {
+  if (obj.version !== 1) {
     throw new Error(
-      `Unsupported config version at ${path}: expected 1, got ${JSON.stringify(obj['version'])}.`,
+      `Unsupported config version at ${path}: expected 1, got ${JSON.stringify(obj.version)}.`,
     );
   }
-  const sources = obj['sources'];
+  const sources = obj.sources;
   if (!Array.isArray(sources)) {
     throw new Error(`Invalid config ${path}: "sources" must be an array.`);
   }
@@ -96,31 +96,31 @@ function validate(raw: unknown, path: string): CcppConfig {
       throw new Error(`Invalid config ${path}: sources[${i}] must be an object.`);
     }
     const e = entry as Record<string, unknown>;
-    if (typeof e['url'] !== 'string' || e['url'].length === 0) {
+    if (typeof e.url !== 'string' || e.url.length === 0) {
       throw new Error(`Invalid config ${path}: sources[${i}].url must be a non-empty string.`);
     }
-    const ref = e['ref'];
+    const ref = e.ref;
     if (ref !== undefined && typeof ref !== 'string') {
       throw new Error(`Invalid config ${path}: sources[${i}].ref must be a string if set.`);
     }
-    const policy = e['policy'];
+    const policy = e.policy;
     if (policy !== undefined && !isSyncPolicy(policy)) {
       throw new Error(
         `Invalid config ${path}: sources[${i}].policy must be one of ${SYNC_POLICIES.join(', ')} if set.`,
       );
     }
-    const source: ConfigSource = { url: e['url'] };
+    const source: ConfigSource = { url: e.url };
     if (ref !== undefined) source.ref = ref;
     if (policy !== undefined) source.policy = policy;
     normalisedSources.push(source);
   }
-  const scope = obj['scope'] ?? 'user';
+  const scope = obj.scope ?? 'user';
   if (scope !== 'user') {
     throw new Error(
       `Invalid config ${path}: "scope" must be "user" (got ${JSON.stringify(scope)}).`,
     );
   }
-  const preferredSources = obj['preferredSources'];
+  const preferredSources = obj.preferredSources;
   let normalisedPreferred: Record<string, string> | undefined;
   if (preferredSources !== undefined) {
     if (
@@ -133,34 +133,30 @@ function validate(raw: unknown, path: string): CcppConfig {
     const map: Record<string, string> = {};
     for (const [k, v] of Object.entries(preferredSources as Record<string, unknown>)) {
       if (typeof v !== 'string') {
-        throw new Error(
-          `Invalid config ${path}: preferredSources["${k}"] must be a string.`,
-        );
+        throw new Error(`Invalid config ${path}: preferredSources["${k}"] must be a string.`);
       }
       map[k] = v;
     }
     normalisedPreferred = map;
   }
 
-  const syncPolicy = obj['syncPolicy'];
+  const syncPolicy = obj.syncPolicy;
   if (syncPolicy !== undefined && !isSyncPolicy(syncPolicy)) {
     throw new Error(
       `Invalid config ${path}: "syncPolicy" must be one of ${SYNC_POLICIES.join(', ')} if set.`,
     );
   }
-  const autoAccept = obj['autoAccept'];
+  const autoAccept = obj.autoAccept;
   if (autoAccept !== undefined && typeof autoAccept !== 'boolean') {
     throw new Error(`Invalid config ${path}: "autoAccept" must be a boolean if set.`);
   }
-  const policyAcknowledgedAt = obj['policyAcknowledgedAt'];
+  const policyAcknowledgedAt = obj.policyAcknowledgedAt;
   if (policyAcknowledgedAt !== undefined && typeof policyAcknowledgedAt !== 'string') {
     throw new Error(`Invalid config ${path}: "policyAcknowledgedAt" must be a string if set.`);
   }
-  const autoAcceptAcknowledgedAt = obj['autoAcceptAcknowledgedAt'];
+  const autoAcceptAcknowledgedAt = obj.autoAcceptAcknowledgedAt;
   if (autoAcceptAcknowledgedAt !== undefined && typeof autoAcceptAcknowledgedAt !== 'string') {
-    throw new Error(
-      `Invalid config ${path}: "autoAcceptAcknowledgedAt" must be a string if set.`,
-    );
+    throw new Error(`Invalid config ${path}: "autoAcceptAcknowledgedAt" must be a string if set.`);
   }
 
   const config: CcppConfig = { version: 1, sources: normalisedSources, scope: 'user' };
@@ -369,27 +365,27 @@ export async function applyConfigSet(
  */
 export function resetConfigValue(config: CcppConfig, key?: string): void {
   if (key === undefined) {
-    delete config.syncPolicy;
-    delete config.autoAccept;
-    delete config.policyAcknowledgedAt;
-    delete config.autoAcceptAcknowledgedAt;
-    for (const src of config.sources) delete src.policy;
+    config.syncPolicy = undefined;
+    config.autoAccept = undefined;
+    config.policyAcknowledgedAt = undefined;
+    config.autoAcceptAcknowledgedAt = undefined;
+    for (const src of config.sources) src.policy = undefined;
     return;
   }
   const parsed = parseKey(key);
   if (!parsed) throw unknownKeyError(key);
   switch (parsed.kind) {
     case 'syncPolicy':
-      delete config.syncPolicy;
+      config.syncPolicy = undefined;
       return;
     case 'autoAccept':
-      delete config.autoAccept;
+      config.autoAccept = undefined;
       return;
     case 'policyAcknowledgedAt':
-      delete config.policyAcknowledgedAt;
+      config.policyAcknowledgedAt = undefined;
       return;
     case 'autoAcceptAcknowledgedAt':
-      delete config.autoAcceptAcknowledgedAt;
+      config.autoAcceptAcknowledgedAt = undefined;
       return;
     case 'sourcePolicy': {
       const src = config.sources.find((s) => s.url === parsed.url);
@@ -398,7 +394,7 @@ export function resetConfigValue(config: CcppConfig, key?: string): void {
           `Unknown source "${parsed.url}". Add it via \`ccpp install\` before resetting per-source policy.`,
         );
       }
-      delete src.policy;
+      src.policy = undefined;
       return;
     }
   }
