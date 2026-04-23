@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-04-23
+
+- Security: refuse to follow symlinks when reading files from a source repo — a crafted source can no longer trick ccpp into reading outside its clone directory.
+- Repo: first-push hygiene — `.gitattributes`, `.editorconfig`, `.nvmrc`, `package.json` publish metadata (`repository`, `homepage`, `bugs`, `keywords`, `publishConfig`, `prepublishOnly`, `prepack`).
+- Dev: `Makefile` with host-agnostic CI goals — `make verify` runs install / build / typecheck / test / pack-check / smoke / audit in one shot.
+- Docs: README synced with shipped v0.1.1 surface and the new Makefile workflow.
+
 ## [0.1.1] - 2026-04-23
 
 - Per-source `syncPolicy`: `pinned` | `latest`, settable globally in `ccpp.config.json` and overridable per source entry.
