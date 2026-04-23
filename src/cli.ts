@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { cac } from 'cac';
 import { type ConfigAction, runConfig } from './commands/config.js';
+import { resolveOverride, runSync } from './commands/sync.js';
 import type { CcppConfig, ConfigSource } from './lib/config.js';
 import {
   CONFIG_FILENAME,
@@ -13,12 +14,7 @@ import {
 } from './lib/config.js';
 import { cloneOrUpdate, parseRepoUrl } from './lib/git.js';
 import { applyManifest, removeFromLockfile } from './lib/installer.js';
-import {
-  LOCKFILE_FILENAME,
-  emptyLockfile,
-  readLockfile,
-  writeLockfile,
-} from './lib/lockfile.js';
+import { LOCKFILE_FILENAME, readLockfile, writeLockfile } from './lib/lockfile.js';
 import { parseManifest } from './lib/manifest.js';
 import { bold, dim, disableColor, green, red, yellow } from './lib/term.js';
 import type { Conflict, Lockfile } from './lib/types.js';
@@ -221,83 +217,24 @@ async function doInstall(
   emitInstallSummary(url, synced.sha, synced.ref, result, common);
 }
 
-async function doSync(opts: CommonOpts & { update?: boolean }): Promise<void> {
+async function doSync(
+  opts: CommonOpts & { update?: boolean; preferLatest?: boolean; pinned?: boolean },
+): Promise<void> {
   const common = commonPaths(opts);
-  const config = await readConfig(common.configPath).catch((err: Error) => {
-    throw new UserError(err.message);
+  const override = resolveOverride({
+    preferLatest: opts.preferLatest,
+    pinned: opts.pinned,
+    update: opts.update,
   });
-  if (!config) {
-    throw new UserError(
-      `No ${CONFIG_FILENAME} at ${common.configPath}. Run \`ccpp init\` first or pass --config <path>.`,
-    );
-  }
-  if (config.sources.length === 0) {
-    log(yellow('!') + ' config has no sources; nothing to sync.', common);
-    return;
-  }
-
-  const lockfile = await readLockfile(common.lockfilePath).catch((err: Error) => {
-    throw new UserError(err.message);
-  });
-
-  const aggregated: {
-    installed: string[];
-    updated: string[];
-    unchanged: string[];
-    conflicts: Conflict[];
-    backups: string[];
-  } = { installed: [], updated: [], unchanged: [], conflicts: [], backups: [] };
-
-  for (const source of config.sources) {
-    const cloneOpts: Parameters<typeof cloneOrUpdate>[1] = {};
-    if (source.ref) cloneOpts.ref = source.ref;
-    let synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
-    try {
-      synced = await cloneOrUpdate(source.url, cloneOpts);
-    } catch (err) {
-      throw new EnvError(`${source.url}: ${(err as Error).message}`);
-    }
-    const manifest = await parseManifest(synced.localPath).catch((err: Error) => {
-      throw new EnvError(`${source.url}: ${err.message}`);
-    });
-    const result = await applyManifest({
-      manifest,
-      sourceUrl: source.url,
-      sourceSha: synced.sha,
-      claudeHome: common.claudeHome,
-      lockfile,
-      preferredSources: config.preferredSources ?? {},
-    });
-    lockfile.sources[source.url] = {
-      sha: synced.sha,
-      ref: synced.ref,
-      lastSync: new Date().toISOString(),
-    };
-    aggregated.installed.push(...result.installed);
-    aggregated.updated.push(...result.updated);
-    aggregated.unchanged.push(...result.unchanged);
-    aggregated.conflicts.push(...result.conflicts);
-    aggregated.backups.push(...result.backups);
-    log(
-      `${green('✓')} ${source.url} ${dim(`@${synced.sha.slice(0, 7)}`)} — ${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged${
-        result.conflicts.length > 0 ? `, ${result.conflicts.length} conflict(s)` : ''
-      }`,
-      common,
-    );
-  }
-
-  await writeLockfile(common.lockfilePath, lockfile);
-
-  if (common.json) {
-    process.stdout.write(`${JSON.stringify(aggregated)}\n`);
-  }
-
-  if (aggregated.conflicts.length > 0) {
-    throw new CollisionError(
-      formatCollisionMessage(aggregated.conflicts, null),
-      aggregated.conflicts,
-    );
-  }
+  const runOpts: Parameters<typeof runSync>[0] = {
+    configPath: common.configPath,
+    lockfilePath: common.lockfilePath,
+    claudeHome: common.claudeHome,
+    json: common.json,
+    quiet: common.quiet,
+  };
+  if (override !== undefined) runOpts.override = override;
+  await runSync(runOpts);
 }
 
 async function doList(opts: CommonOpts): Promise<void> {
@@ -521,8 +458,13 @@ function stripColor(s: string): string {
 function classifyAndExit(err: unknown): never {
   let code: number = EXIT.ENV;
   let message: string;
-  if (err instanceof UserError || err instanceof EnvError || err instanceof CollisionError) {
-    code = err.exitCode;
+  if (
+    err instanceof Error &&
+    typeof (err as { exitCode?: unknown }).exitCode === 'number'
+  ) {
+    // Duck-typed: recognizes error classes defined in sub-modules (e.g. commands/sync.ts)
+    // without requiring a shared base class across module boundaries.
+    code = (err as unknown as { exitCode: number }).exitCode;
     message = err.message;
   } else if (err instanceof Error) {
     message = err.message;
@@ -567,10 +509,16 @@ async function main(argv: string[]): Promise<void> {
   attachCommonOptions(
     cli
       .command('sync', 'Sync every source in ccpp.config.json to its pinned / latest commit')
-      .option('--update', 'Fetch newer HEADs and rewrite the lockfile (otherwise install pinned)')
-      .action(async (opts: CommonOpts & { update?: boolean }) => {
-        await doSync(opts);
-      }),
+      .option('--prefer-latest', 'One-shot: treat every source as policy=latest for this run')
+      .option('--pinned', 'One-shot: treat every source as policy=pinned for this run')
+      .option('--update', 'Deprecated alias for --prefer-latest')
+      .action(
+        async (
+          opts: CommonOpts & { update?: boolean; preferLatest?: boolean; pinned?: boolean },
+        ) => {
+          await doSync(opts);
+        },
+      ),
   );
 
   attachCommonOptions(
