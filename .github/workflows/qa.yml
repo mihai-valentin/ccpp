@@ -9,16 +9,20 @@ concurrency:
   group: qa-${{ github.ref }}
   cancel-in-progress: true
 
+# Workflow-level env. FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 has to live up here
+# (not at job level) — the runner reads it when deciding which Node binary
+# to launch JS actions under, and a job-level env isn't set yet at that
+# point. Opts action-runtime into Node 24 ahead of the Sept 2026 Node 20
+# deprecation. Unrelated to our build target (stays on Node 20 per engines).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   qa:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       CI: 'true'
-      # Opt the action runtime (checkout, setup-node) into Node 24 ahead of
-      # the Sept 2026 deprecation. Unrelated to our build target, which
-      # stays on Node 20 per `engines` in package.json.
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     steps:
       - uses: actions/checkout@v4
 
