@@ -102,6 +102,16 @@ release: verify
 	fi
 	@npm publish
 
+## reinstall-local: Uninstall global ccpp, rebuild, pack, and re-install from the local tarball.
+.PHONY: reinstall-local
+reinstall-local: build
+	@npm uninstall -g ccpp >/dev/null 2>&1 || true
+	@rm -f ccpp-*.tgz
+	@TGZ=$$(npm pack --silent --ignore-scripts | tail -n1); \
+	  npm i -g "./$$TGZ"; \
+	  echo "✓ reinstall-local: $$TGZ installed globally"
+	@ccpp --version
+
 ## clean: Remove build artifacts (dist/, generated tarballs). Keeps node_modules.
 .PHONY: clean
 clean:
