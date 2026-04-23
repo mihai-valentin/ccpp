@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# `gh release create` needs write access to the repo's contents + releases.
+permissions:
+  contents: write
+
+# Same action-runtime opt-in as qa.yml — see that file for why this has to
+# live at workflow-top, not job-level.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      # Sanity gate: never ship a tag that can't pass the full CI. Cheap
+      # insurance since make ci is the same gate qa.yml enforces on master.
+      - name: CI gate
+        run: make ci
+
+      - name: Pack npm tarball
+        id: pack
+        run: |
+          tarball=$(npm pack --silent --ignore-scripts | tail -n1)
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "Packed: $tarball"
+
+      # Pull just the section for this tag's version out of CHANGELOG.md so
+      # the release body matches what shipped. Falls back to a pointer at
+      # CHANGELOG.md when no matching entry exists (shouldn't happen in the
+      # steady state, but don't let a missing entry fail the release).
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '
+            $0 ~ "^## \\[" v "\\]" { in_block=1; next }
+            in_block && /^## \[/ { exit }
+            in_block { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            printf '_No CHANGELOG.md entry found for %s — see the full [CHANGELOG](./CHANGELOG.md)._\n' \
+              "$GITHUB_REF_NAME" > RELEASE_NOTES.md
+          fi
+          echo "--- release notes preview ---"
+          cat RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "${{ steps.pack.outputs.tarball }}" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md

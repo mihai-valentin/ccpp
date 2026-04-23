@@ -4,9 +4,9 @@ Private skill / slash-command distribution for Claude Code teams. Syncs resource
 
 Installable via npm; daily invocation via `npx ccpp sync`.
 
-Part of the [xlnf](../) portfolio. See [`idea.md`](./idea.md) for target users, pain, feature scope, pricing, success metric, and open questions.
+Part of the [xlnf](https://mihai-valentin.github.io/xlnf/) portfolio.
 
-> Name note: `ccpp` (Claude Code Plugin Proxy) is a working slug and will likely be renamed before public release. The npm package name is decided at that point — see open questions in `idea.md`.
+> Name note: `ccpp` (Claude Code Plugin Proxy) is a working slug and will likely be renamed before public release. The npm package name is decided at that point.
 
 ## Install
 
