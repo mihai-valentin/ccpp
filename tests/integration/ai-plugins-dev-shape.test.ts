@@ -266,7 +266,13 @@ describe('ai-plugins-dev shape — end-to-end', () => {
     await fs.writeFile(
       configPath,
       `${JSON.stringify(
-        { version: 1, sources: [{ url: primary.bareUrl }], scope: 'user' },
+        {
+          version: 1,
+          sources: [{ url: primary.bareUrl }],
+          scope: 'user',
+          autoAccept: true,
+          autoAcceptAcknowledgedAt: '2026-04-23T00:00:00.000Z',
+        },
         null,
         2,
       )}\n`,
@@ -325,6 +331,8 @@ describe('ai-plugins-dev shape — end-to-end', () => {
           version: 1,
           sources: [{ url: primary.bareUrl }, { url: collision.bareUrl }],
           scope: 'user',
+          autoAccept: true,
+          autoAcceptAcknowledgedAt: '2026-04-23T00:00:00.000Z',
         },
         null,
         2,
@@ -350,6 +358,8 @@ describe('ai-plugins-dev shape — end-to-end', () => {
           version: 1,
           sources: [{ url: primary.bareUrl }, { url: collision.bareUrl }],
           scope: 'user',
+          autoAccept: true,
+          autoAcceptAcknowledgedAt: '2026-04-23T00:00:00.000Z',
           preferredSources: { 'git-commit': primary.bareUrl },
         },
         null,

@@ -82,7 +82,7 @@ say 'init'
 test -f "$PROJECT/ccpp.config.json"
 
 say 'sync (fresh install)'
-( cd "$PROJECT" && ccpp sync )
+( cd "$PROJECT" && ccpp sync --auto-accept )
 test -f "$CLAUDE_HOME/commands/hello.md"
 test -f "$CLAUDE_HOME/commands/demo-run.md"
 test -f "$CLAUDE_HOME/skills/greet/SKILL.md"
@@ -94,7 +94,7 @@ say 'list'
 say 'sync (idempotent — expect all unchanged)'
 before_mtime=$(stat -c %Y "$CLAUDE_HOME/commands/hello.md")
 sleep 1
-( cd "$PROJECT" && ccpp sync )
+( cd "$PROJECT" && ccpp sync --auto-accept )
 after_mtime=$(stat -c %Y "$CLAUDE_HOME/commands/hello.md")
 if [ "$before_mtime" != "$after_mtime" ]; then
   echo "FAIL: hello.md mtime changed on idempotent sync" >&2
@@ -105,7 +105,7 @@ say 'update flow — bump hello.md, resync, expect overwrite + .bak'
 echo '# hello v2' > "$SRC_WORK/commands/hello.md"
 git -C "$SRC_WORK" commit -am 'bump hello' -q
 git -C "$SRC_WORK" push origin main -q
-( cd "$PROJECT" && ccpp sync )
+( cd "$PROJECT" && ccpp sync --auto-accept )
 grep -q 'v2' "$CLAUDE_HOME/commands/hello.md"
 ls "$CLAUDE_HOME/commands/"hello.md.bak.* >/dev/null
 

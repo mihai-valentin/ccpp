@@ -16,7 +16,7 @@ let claudeHome: string;
 let configPath: string;
 let lockfilePath: string;
 let fixture: LocalGitFixture;
-let prevCache: string | undefined;
+const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(async () => {
   scratch = await fs.mkdtemp(join(tmpdir(), 'ccpp-sync-'));
@@ -28,13 +28,20 @@ beforeEach(async () => {
   fixture = await createLocalGitFixture('ccpp-sync-test');
   await fs.mkdir(join(fixture.workPath, 'commands'), { recursive: true });
   await fixture.advance('commands/hello.md', '# hello\n');
-  prevCache = process.env['CCPP_CACHE'];
+  // Isolate from host git config — avoids core.autocrlf=true rewriting LF→CRLF on checkout.
+  for (const key of ['CCPP_CACHE', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM']) {
+    savedEnv[key] = process.env[key];
+  }
   process.env['CCPP_CACHE'] = cacheRoot;
+  process.env['GIT_CONFIG_GLOBAL'] = '/dev/null';
+  process.env['GIT_CONFIG_SYSTEM'] = '/dev/null';
 });
 
 afterEach(async () => {
-  if (prevCache === undefined) delete process.env['CCPP_CACHE'];
-  else process.env['CCPP_CACHE'] = prevCache;
+  for (const [key, value] of Object.entries(savedEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
   await fixture.cleanup();
   await fs.rm(scratch, { recursive: true, force: true });
 });
@@ -130,6 +137,140 @@ describe('runSync — policy resolution', () => {
       override: 'pinned',
     });
     expect(report.sources[0]!.policy).toBe('pinned');
+  }, 30_000);
+});
+
+describe('runSync — diff preview and apply gate', () => {
+  it('(DA1) config.autoAccept=true skips the prompt and applies', async () => {
+    await writeConfig({
+      version: 1,
+      scope: 'user',
+      sources: [{ url: fixture.url }],
+      autoAccept: true,
+      autoAcceptAcknowledgedAt: '2026-04-23T00:00:00Z',
+    });
+    const report = await runSync({
+      configPath,
+      lockfilePath,
+      claudeHome,
+      json: false,
+      quiet: true,
+    });
+    expect(report.sources[0]!.applyStatus).toBe('applied');
+    expect(report.sources[0]!.installed).toContain(join(claudeHome, 'commands', 'hello.md'));
+    // File actually landed on disk:
+    expect(await fs.readFile(join(claudeHome, 'commands', 'hello.md'), 'utf8')).toBe('# hello\n');
+  }, 30_000);
+
+  it('(DA2) --auto-accept flag skips the prompt and applies', async () => {
+    await writeConfig({
+      version: 1,
+      scope: 'user',
+      sources: [{ url: fixture.url }],
+    });
+    const report = await runSync({
+      configPath,
+      lockfilePath,
+      claudeHome,
+      json: false,
+      quiet: true,
+      autoAccept: true,
+    });
+    expect(report.sources[0]!.applyStatus).toBe('applied');
+    expect(await fs.readFile(join(claudeHome, 'commands', 'hello.md'), 'utf8')).toBe('# hello\n');
+  }, 30_000);
+
+  it('(DA3) autoAccept=false + non-TTY skips apply and records skipped-no-prompt', async () => {
+    await writeConfig({
+      version: 1,
+      scope: 'user',
+      sources: [{ url: fixture.url }],
+    });
+    const report = await runSync({
+      configPath,
+      lockfilePath,
+      claudeHome,
+      json: false,
+      quiet: true,
+      isTTY: false,
+    });
+    expect(report.sources[0]!.applyStatus).toBe('skipped-no-prompt');
+    expect(report.sources[0]!.installed).toEqual([]);
+    // hello.md was NOT written:
+    await expect(fs.access(join(claudeHome, 'commands', 'hello.md'))).rejects.toThrow();
+    // Lockfile sources entry stayed empty since priorSha was null:
+    const lock = JSON.parse(await fs.readFile(lockfilePath, 'utf8'));
+    expect(lock.sources[fixture.url]).toBeUndefined();
+  }, 30_000);
+
+  it('(DA4) --json + autoAccept=false emits skipped-no-prompt without prompting', async () => {
+    await writeConfig({
+      version: 1,
+      scope: 'user',
+      sources: [{ url: fixture.url }],
+    });
+    // confirm would throw if it were ever called — --json must bypass it.
+    const report = await runSync({
+      configPath,
+      lockfilePath,
+      claudeHome,
+      json: true,
+      quiet: true,
+      isTTY: true,
+      confirm: () => {
+        throw new Error('confirm must not be called in --json mode');
+      },
+    });
+    expect(report.sources[0]!.applyStatus).toBe('skipped-no-prompt');
+    expect(report.sources[0]!.changeset.added).toContain(
+      join(claudeHome, 'commands', 'hello.md'),
+    );
+  }, 30_000);
+
+  it('(DA5) verbose expands the proposal to per-file paths', async () => {
+    await writeConfig({
+      version: 1,
+      scope: 'user',
+      sources: [{ url: fixture.url }],
+    });
+    let capturedPrompt = '';
+    const report = await runSync({
+      configPath,
+      lockfilePath,
+      claudeHome,
+      json: false,
+      quiet: true,
+      verbose: true,
+      isTTY: true,
+      confirm: (prompt) => {
+        capturedPrompt = prompt;
+        return true;
+      },
+    });
+    expect(report.sources[0]!.applyStatus).toBe('applied');
+    // Header line is present in both verbose and non-verbose modes…
+    expect(capturedPrompt).toMatch(/proposes: \+1 added, ~0 modified, -0 removed/);
+    // …but verbose also expands the per-file bullet list.
+    expect(capturedPrompt).toContain(`+ ${join(claudeHome, 'commands', 'hello.md')}`);
+  }, 30_000);
+
+  it('confirm → user-declined leaves disk untouched', async () => {
+    await writeConfig({
+      version: 1,
+      scope: 'user',
+      sources: [{ url: fixture.url }],
+    });
+    const report = await runSync({
+      configPath,
+      lockfilePath,
+      claudeHome,
+      json: false,
+      quiet: true,
+      isTTY: true,
+      confirm: () => false,
+    });
+    expect(report.sources[0]!.applyStatus).toBe('user-declined');
+    await expect(fs.access(join(claudeHome, 'commands', 'hello.md'))).rejects.toThrow();
   }, 30_000);
 });
 

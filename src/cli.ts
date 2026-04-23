@@ -218,7 +218,13 @@ async function doInstall(
 }
 
 async function doSync(
-  opts: CommonOpts & { update?: boolean; preferLatest?: boolean; pinned?: boolean },
+  opts: CommonOpts & {
+    update?: boolean;
+    preferLatest?: boolean;
+    pinned?: boolean;
+    autoAccept?: boolean;
+    verbose?: boolean;
+  },
 ): Promise<void> {
   const common = commonPaths(opts);
   const override = resolveOverride({
@@ -234,6 +240,8 @@ async function doSync(
     quiet: common.quiet,
   };
   if (override !== undefined) runOpts.override = override;
+  if (opts.autoAccept === true) runOpts.autoAccept = true;
+  if (opts.verbose === true) runOpts.verbose = true;
   await runSync(runOpts);
 }
 
@@ -513,9 +521,17 @@ async function main(argv: string[]): Promise<void> {
       .option('--prefer-latest', 'One-shot: treat every source as policy=latest for this run')
       .option('--pinned', 'One-shot: treat every source as policy=pinned for this run')
       .option('--update', 'Deprecated alias for --prefer-latest')
+      .option('--auto-accept', 'Skip the diff-preview prompt for this run')
+      .option('--verbose', 'Expand the diff-preview summary to per-file paths')
       .action(
         async (
-          opts: CommonOpts & { update?: boolean; preferLatest?: boolean; pinned?: boolean },
+          opts: CommonOpts & {
+            update?: boolean;
+            preferLatest?: boolean;
+            pinned?: boolean;
+            autoAccept?: boolean;
+            verbose?: boolean;
+          },
         ) => {
           await doSync(opts);
         },
