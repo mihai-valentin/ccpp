@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { cac } from 'cac';
+import { type ConfigAction, runConfig } from './commands/config.js';
 import type { CcppConfig, ConfigSource } from './lib/config.js';
 import {
   CONFIG_FILENAME,
@@ -376,6 +377,34 @@ async function doUninstall(name: string, opts: CommonOpts): Promise<void> {
   for (const bak of result.backups) log(`  ${dim(bak)}`, common);
 }
 
+async function doConfig(
+  action: string,
+  key: string | undefined,
+  value: string | undefined,
+  opts: CommonOpts,
+): Promise<void> {
+  const common = commonPaths(opts);
+  const valid: ConfigAction[] = ['get', 'set', 'reset', 'list'];
+  if (!valid.includes(action as ConfigAction)) {
+    throw new UserError(
+      `ccpp config: unknown action "${action}". Expected one of ${valid.join(', ')}.`,
+    );
+  }
+  try {
+    const runOpts: Parameters<typeof runConfig>[0] = {
+      action: action as ConfigAction,
+      configPath: common.configPath,
+      json: common.json,
+      quiet: common.quiet,
+    };
+    if (key !== undefined) runOpts.key = key;
+    if (value !== undefined) runOpts.value = value;
+    await runConfig(runOpts);
+  } catch (err) {
+    throw new UserError((err as Error).message);
+  }
+}
+
 function resolveSourceForUninstall(lockfile: Lockfile, name: string): string | null {
   if (lockfile.sources[name]) return name;
   for (const url of Object.keys(lockfile.sources)) {
@@ -556,6 +585,21 @@ async function main(argv: string[]): Promise<void> {
         await doUninstall(name, opts);
       },
     ),
+  );
+
+  attachCommonOptions(
+    cli
+      .command('config <action> [key] [value]', 'Manage ccpp configuration')
+      .action(
+        async (
+          action: string,
+          key: string | undefined,
+          value: string | undefined,
+          opts: CommonOpts,
+        ) => {
+          await doConfig(action, key, value, opts);
+        },
+      ),
   );
 
   cli.command('', 'Show help').action(() => {
