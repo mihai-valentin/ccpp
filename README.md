@@ -46,6 +46,9 @@ npx ccpp init
 npx ccpp install git@bitbucket.org:your-org/ai-plugins.git
 npx ccpp install https://github.com/your-org/claude-plugins.git
 
+# 2b. (optional) hands-off install — per-source auto-update, skip every prompt for this run
+npx ccpp install git@bitbucket.org:your-org/ai-plugins.git --prefer-latest --yes
+
 # 3. Later — sync all sources to the commit pinned in ccpp.lock.json (with a diff-preview prompt)
 npx ccpp sync
 
@@ -122,6 +125,12 @@ ccpp install-hook
 
 # 4. Confirm
 ccpp status
+```
+
+Per-source shortcut: if you only want one vendor on auto-update (not the whole project), pass `--prefer-latest` at install time and skip step 1. It writes `policy: latest` on that source entry only:
+
+```bash
+ccpp install <url> --prefer-latest --yes   # --yes auto-acks the policy-risk prompt for this run
 ```
 
 ### Trust model — what you're opting in to

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2026-04-23
+
+- Feature: `ccpp install <url> --prefer-latest` persists `policy: latest` on the source entry being added, so future `ccpp sync` runs pull the newest commit for that vendor without needing a global flip. Per-source only — does not touch the global `syncPolicy` default.
+- Feature: `ccpp install <url> --yes` auto-confirms every prompt during this install run — the first-enable risk acknowledgement for `policy: latest`, plus any collision resolution (incoming wins). One-shot; does **not** persist `autoAccept` globally.
+- CLI: `--prefer-latest --yes` together give a one-command hands-off install: `ccpp install <url> --prefer-latest --yes`. On a TTY, `--prefer-latest` alone still prompts for the risk ack; on a non-TTY without `--yes`, it errors out with a hint pointing at `--yes`. `--prefer-latest --scratch` is rejected since scratch skips config writes.
+- Tests: four new CLI tests — persist policy+ack shape; auto-resolved collisions on re-install; `--scratch` rejection; non-TTY hint.
+
 ## [0.1.4] - 2026-04-23
 
 - Fix: install wizard's post-install report now counts `installed + updated + unchanged` files, not just newly-created ones. Re-running the wizard over already-populated `~/.claude/` previously showed "0 command(s), 0 skill(s)" even though `ccpp list` correctly saw the full set. Report also now carries a 3-way breakdown line under the total.

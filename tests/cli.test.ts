@@ -157,11 +157,40 @@ describe('exit codes', () => {
     expect(stderr).toMatch(/ccpp install <url>/);
   });
 
-  it('rejects --ref / --prefer / --scratch when called without a URL', async () => {
-    const { code, stderr } = await cli(['install', '--ref', 'main'], { cwd: scratch });
-    expect(code).toBe(1);
-    expect(stderr).toMatch(/require a <url>/i);
+  it('rejects --ref / --prefer / --scratch / --prefer-latest / --yes when called without a URL', async () => {
+    for (const flag of ['--ref=main', '--prefer', '--scratch', '--prefer-latest', '--yes']) {
+      const { code, stderr } = await cli(['install', flag], { cwd: scratch });
+      expect(code, `expected exit 1 for ${flag}, got ${code}`).toBe(1);
+      expect(stderr).toMatch(/require a <url>/i);
+    }
   });
+
+  it('rejects --prefer-latest with --scratch (nowhere to persist policy)', async () => {
+    const { code, stderr } = await cli(
+      ['install', 'git@example.com:x/y.git', '--prefer-latest', '--scratch'],
+      { cwd: scratch },
+    );
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/incompatible with --scratch/i);
+  });
+
+  it('rejects --prefer-latest on a non-TTY without --yes (hint at --yes)', async () => {
+    // Our spawn harness attaches pipes, so stdin.isTTY is false — the ack
+    // can't be resolved interactively, and we must nudge the user at --yes.
+    const fx = await createLocalGitFixture('ccpp-cli-plat-nonyes');
+    try {
+      const claudeHome = join(scratch, 'claude');
+      const cacheRoot = join(scratch, 'cache');
+      const { code, stderr } = await cli(
+        ['install', fx.url, '--prefer-latest', '--claude-home', claudeHome],
+        { cwd: scratch, env: { CCPP_CACHE: cacheRoot } },
+      );
+      expect(code).toBe(1);
+      expect(stderr).toMatch(/--yes/i);
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
 
   it('exits 1 when `sync` runs with no ccpp.config.json', async () => {
     const { code, stderr } = await cli(['sync'], { cwd: scratch });
@@ -180,6 +209,69 @@ describe('exit codes', () => {
     expect(code).toBe(2);
     expect(stderr.length).toBeGreaterThan(0);
   });
+
+  it('--prefer-latest --yes persists policy:latest on the source and stamps the ack', async () => {
+    const fx = await createLocalGitFixture('ccpp-cli-plat-yes');
+    try {
+      await fs.mkdir(join(fx.workPath, 'commands'), { recursive: true });
+      await fx.advance('commands/one.md', '# one\n');
+      const claudeHome = join(scratch, 'claude');
+      const cacheRoot = join(scratch, 'cache');
+
+      const { code } = await cli(
+        ['install', fx.url, '--prefer-latest', '--yes', '--claude-home', claudeHome],
+        { cwd: scratch, env: { CCPP_CACHE: cacheRoot } },
+      );
+      expect(code).toBe(0);
+
+      const cfg = JSON.parse(
+        await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'),
+      );
+      expect(cfg.sources).toEqual([{ policy: 'latest', url: fx.url }]);
+      expect(typeof cfg.policyAcknowledgedAt).toBe('string');
+      expect(cfg.policyAcknowledgedAt.length).toBeGreaterThan(0);
+      // --yes on install is one-shot: does NOT set global autoAccept.
+      expect(cfg.autoAccept).toBeUndefined();
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
+
+  it('--yes auto-resolves collisions (incoming wins) on re-install', async () => {
+    const a = await createLocalGitFixture('ccpp-cli-yes-collide-a');
+    const b = await createLocalGitFixture('ccpp-cli-yes-collide-b');
+    try {
+      await fs.mkdir(join(a.workPath, 'commands'), { recursive: true });
+      await fs.mkdir(join(b.workPath, 'commands'), { recursive: true });
+      await a.advance('commands/overlap.md', '# from A\n');
+      await b.advance('commands/overlap.md', '# from B\n');
+
+      const claudeHome = join(scratch, 'claude');
+      const cacheRoot = join(scratch, 'cache');
+      const env = { CCPP_CACHE: cacheRoot };
+
+      const first = await cli(
+        ['install', a.url, '--claude-home', claudeHome],
+        { cwd: scratch, env },
+      );
+      expect(first.code).toBe(0);
+
+      const second = await cli(
+        ['install', b.url, '--yes', '--claude-home', claudeHome],
+        { cwd: scratch, env },
+      );
+      expect(second.code).toBe(0);
+
+      const overlap = await fs.readFile(
+        join(claudeHome, 'commands', 'overlap.md'),
+        'utf8',
+      );
+      expect(overlap.replace(/\r\n/g, '\n')).toBe('# from B\n');
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
+    }
+  }, 30_000);
 
   it('exits 3 when two sources provide the same command', async () => {
     const a = await createLocalGitFixture('ccpp-cli-collide-a');

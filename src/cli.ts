@@ -17,7 +17,13 @@ import {
 import { runStatus } from './commands/status.js';
 import { resolveOverride, runSync } from './commands/sync.js';
 import { runUninstallHook } from './commands/uninstall-hook.js';
-import { applyConfigSet, type CcppConfig, type ConfigSource } from './lib/config.js';
+import {
+  applyConfigSet,
+  type CcppConfig,
+  type ConfigSource,
+  POLICY_LATEST_WARNING,
+  requiresAcknowledgement,
+} from './lib/config.js';
 import {
   CONFIG_FILENAME,
   configExists,
@@ -278,11 +284,22 @@ async function installSource(params: InstallSourceParams): Promise<InstallSource
 
 async function doInstall(
   url: string | undefined,
-  opts: CommonOpts & { ref?: string; prefer?: boolean; scratch?: boolean },
+  opts: CommonOpts & {
+    ref?: string;
+    prefer?: boolean;
+    scratch?: boolean;
+    preferLatest?: boolean;
+    yes?: boolean;
+  },
 ): Promise<void> {
   if (typeof url !== 'string' || url.length === 0) {
     await doInstallInteractive(opts);
     return;
+  }
+  if (opts.preferLatest === true && opts.scratch === true) {
+    throw new UserError(
+      'ccpp install: --prefer-latest writes per-source policy to ccpp.config.json and is incompatible with --scratch.',
+    );
   }
   const common = commonPaths(opts);
 
@@ -295,18 +312,28 @@ async function doInstall(
     }
   }
 
+  if (opts.preferLatest === true) {
+    if (existing === null) existing = emptyConfig();
+    if (!existing.sources.some((s) => s.url === url)) {
+      const src: ConfigSource = { url };
+      if (opts.ref) src.ref = opts.ref;
+      existing.sources.push(src);
+    }
+    await applyPreferLatest(existing, url, Boolean(opts.yes));
+  }
+
   const installParams: InstallSourceParams = {
     url,
     common,
     existing,
     scratch: Boolean(opts.scratch),
-    forcePreferIncoming: Boolean(opts.prefer),
+    forcePreferIncoming: Boolean(opts.prefer) || Boolean(opts.yes),
   };
   if (opts.ref) installParams.ref = opts.ref;
   // Only offer interactive conflict resolution when stdin is a TTY and the
-  // user did not pre-declare a winner via `--prefer`. Scripts keep their old
-  // exit-3 behavior (CollisionError is thrown if no resolver picks a winner).
-  if (!opts.prefer && isInteractive()) {
+  // user did not pre-declare a winner via `--prefer` or `--yes`. Scripts keep
+  // their old exit-3 behavior (CollisionError is thrown if no resolver picks).
+  if (!opts.prefer && !opts.yes && isInteractive()) {
     installParams.resolveConflicts = (conflicts, incoming) =>
       interactiveConflictResolver(conflicts, incoming);
   }
@@ -314,6 +341,41 @@ async function doInstall(
   const { synced, result } = await installSource(installParams);
 
   emitInstallSummary(url, synced.sha, synced.ref, result, common);
+}
+
+/**
+ * Persist `policy: latest` on the just-pushed source entry, gated by the
+ * first-enable acknowledgement. `yes=true` auto-acks (as if the user typed
+ * Y); otherwise, on a TTY the warning is printed and a [y/N] prompt fires,
+ * and on a non-TTY we error out with a hint pointing at --yes.
+ */
+async function applyPreferLatest(
+  config: CcppConfig,
+  url: string,
+  yes: boolean,
+): Promise<void> {
+  const key = `sources.${url}.policy`;
+  const ackKind = requiresAcknowledgement(config, key, 'latest');
+  if (ackKind !== null) process.stderr.write(`${POLICY_LATEST_WARNING}\n`);
+
+  const setOpts: Parameters<typeof applyConfigSet>[3] = {};
+  if (yes) {
+    setOpts.autoAcceptAcks = true;
+  } else if (ackKind === null) {
+    // Ack already recorded — no confirm handler needed; applyConfigSet is a
+    // straight write.
+  } else if (isInteractive()) {
+    setOpts.confirm = async () => await promptYesNo('Continue?');
+  } else {
+    throw new UserError(
+      'ccpp install: --prefer-latest requires acknowledging the syncPolicy:latest risk. Add --yes to auto-confirm non-interactively.',
+    );
+  }
+  try {
+    await applyConfigSet(config, key, 'latest', setOpts);
+  } catch (err) {
+    throw new UserError((err as Error).message);
+  }
 }
 
 function isInteractive(): boolean {
@@ -335,11 +397,23 @@ function realWizardIO(): WizardIO {
  * hint pointing at the non-interactive form.
  */
 async function doInstallInteractive(
-  opts: CommonOpts & { ref?: string; prefer?: boolean; scratch?: boolean },
+  opts: CommonOpts & {
+    ref?: string;
+    prefer?: boolean;
+    scratch?: boolean;
+    preferLatest?: boolean;
+    yes?: boolean;
+  },
 ): Promise<void> {
-  if (opts.ref !== undefined || opts.prefer === true || opts.scratch === true) {
+  if (
+    opts.ref !== undefined ||
+    opts.prefer === true ||
+    opts.scratch === true ||
+    opts.preferLatest === true ||
+    opts.yes === true
+  ) {
     throw new UserError(
-      'ccpp install: --ref, --prefer and --scratch all require a <url> argument.',
+      'ccpp install: --ref, --prefer, --scratch, --prefer-latest and --yes all require a <url> argument.',
     );
   }
   const common = commonPaths(opts);
@@ -826,11 +900,19 @@ async function main(argv: string[]): Promise<void> {
       )
       .option('--ref <ref>', 'Optional ref (branch/tag) to check out')
       .option('--prefer', 'On collision, prefer this install over existing lockfile entries')
+      .option('--prefer-latest', 'Persist policy=latest on this source (future syncs pull newest)')
+      .option('--yes', 'Auto-confirm prompts during this install run (ack + collisions)')
       .option('--scratch', 'Ad-hoc install — do not touch ccpp.config.json')
       .action(
         async (
           url: string | undefined,
-          opts: CommonOpts & { ref?: string; prefer?: boolean; scratch?: boolean },
+          opts: CommonOpts & {
+            ref?: string;
+            prefer?: boolean;
+            scratch?: boolean;
+            preferLatest?: boolean;
+            yes?: boolean;
+          },
         ) => {
           await doInstall(url, opts);
         },
