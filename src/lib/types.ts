@@ -50,6 +50,19 @@ export interface SlashCommand {
 }
 
 /**
+ * A single Claude Code subagent discovered inside a source repository.
+ * Agents are flat single-file definitions: a markdown file with frontmatter
+ * (name, description, tools, model) plus a system-prompt body. They install
+ * to `~/.claude/agents/<name>.md` and are auto-discovered by Claude Code.
+ */
+export interface Agent {
+  /** Agent short name. Derived from the file basename (no `.md`). */
+  name: string;
+  /** Absolute path to the backing `.md` file on disk. */
+  sourceFile: string;
+}
+
+/**
  * A single Claude Code skill discovered inside a source repository.
  * A skill is a directory containing `SKILL.md` and, optionally, supporting files.
  */
@@ -80,6 +93,8 @@ export interface PluginManifest {
   commands: SlashCommand[];
   /** Skills exposed by this plugin. */
   skills: Skill[];
+  /** Subagents exposed by this plugin. */
+  agents: Agent[];
 }
 
 /**
@@ -95,6 +110,8 @@ export interface ResolvedManifest {
   plugins: PluginManifest[];
   /** Top-level slash commands not bound to any plugin (from `commands/*.md` at repo root). */
   standaloneCommands: SlashCommand[];
+  /** Top-level subagents not bound to any plugin (from `agents/*.md` at repo root). */
+  standaloneAgents: Agent[];
 }
 
 /**
@@ -169,6 +186,6 @@ export interface Conflict {
   currentSourceUrl: string;
   /** URL of the source attempting to overwrite it. */
   incomingSourceUrl: string;
-  /** Short name (command or skill) that collided. */
+  /** Short name (command, skill, or agent) that collided. */
   name: string;
 }

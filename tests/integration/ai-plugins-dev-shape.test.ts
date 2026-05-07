@@ -123,11 +123,13 @@ const GIT_CONFLICT_PLUGIN_JSON = `${JSON.stringify(
 const AI_PLUGINS_DEV_SHAPE: Record<string, string> = {
   'commands/fix-session.md': '# fix-session\n',
   'commands/review-changes.md': '# review-changes\n',
+  'agents/triage.md': '# triage agent\n',
   'plugins/ai-pr-workflow/.claude-plugin/plugin.json': PR_WORKFLOW_PLUGIN_JSON,
   'plugins/ai-pr-workflow/commands/git-commit.md': '# git-commit\n',
   'plugins/ai-pr-workflow/commands/pr-summary.md': '# pr-summary\n',
   'plugins/ai-pr-workflow/skills/git-commit/SKILL.md': '# git-commit skill\n',
   'plugins/ai-pr-workflow/skills/pr-summary/SKILL.md': '# pr-summary skill\n',
+  'plugins/ai-pr-workflow/agents/pr-reviewer.md': '# pr-reviewer agent\n',
   'plugins/git-conflict-resolver/.claude-plugin/plugin.json': GIT_CONFLICT_PLUGIN_JSON,
   'plugins/git-conflict-resolver/commands/git-resolve-conflicts.md': '# git-resolve-conflicts\n',
   'plugins/git-conflict-resolver/skills/resolve-conflicts/SKILL.md': '# resolve-conflicts skill\n',
@@ -216,7 +218,7 @@ describe('ai-plugins-dev shape — end-to-end', () => {
     if (tmp) await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  it('1 — fresh install materialises every command + skill and writes the lockfile', async () => {
+  it('1 — fresh install materialises every command + skill + agent and writes the lockfile', async () => {
     const r = await cli(['install', primary.bareUrl], { cwd, env, claudeHome });
     expect(r.code).toBe(0);
 
@@ -230,6 +232,12 @@ describe('ai-plugins-dev shape — end-to-end', () => {
     for (const name of expectedCommands) {
       const p = join(claudeHome, 'commands', `${name}.md`);
       expect(await pathExists(p), `command missing: ${p}`).toBe(true);
+    }
+
+    const expectedAgents = ['triage', 'pr-reviewer'];
+    for (const name of expectedAgents) {
+      const p = join(claudeHome, 'agents', `${name}.md`);
+      expect(await pathExists(p), `agent missing: ${p}`).toBe(true);
     }
 
     const expectedSkillFiles: Array<[string, string]> = [
@@ -254,6 +262,9 @@ describe('ai-plugins-dev shape — end-to-end', () => {
     const installedKeys = Object.keys(lock.installed);
     for (const name of expectedCommands) {
       expect(installedKeys.some((p) => p.endsWith(`commands/${name}.md`))).toBe(true);
+    }
+    for (const name of expectedAgents) {
+      expect(installedKeys.some((p) => p.endsWith(`agents/${name}.md`))).toBe(true);
     }
     for (const [skill, rel] of expectedSkillFiles) {
       expect(installedKeys.some((p) => p.endsWith(`skills/${skill}/${rel}`))).toBe(true);

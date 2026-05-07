@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-05-07
+
+- Feature: **subagent support**. ccpp now discovers and installs Claude Code subagents alongside commands and skills. Source convention is `agents/<name>.md` at repo root for standalone agents and `plugins/<name>/agents/<name>.md` for plugin-bundled agents — same shape as `commands/`. Files install to `~/.claude/agents/<name>.md`; Claude Code auto-discovers them, no `/reload-plugins` needed. Existing repos without an `agents/` directory keep working unchanged — agents are purely additive.
+- Manifest: `ResolvedManifest` gains `standaloneAgents`; `PluginManifest` gains `agents`. New `agent-name-collision` warning when a standalone agent shares a name with a plugin-scoped one (parallel to the existing command warning). Cross-class collisions (e.g. command + agent both named `code-reviewer`) are intentionally **not** flagged — different Claude Code namespaces.
+- Installer: agents flow through the same plan-and-write pipeline as commands/skills — same conflict detection, same `--prefer` resolution, same `.bak.<timestamp>` overwrites, same lockfile shape (no schema bump needed; `LockInstalledEntry` is path-keyed).
+- CLI: `ccpp list` now includes an agent type alongside commands and skills. The install-summary line reports `X command(s), Y skill(s), Z agent(s)`.
+- Tests: 5 new unit/integration cases — agent discovery (standalone + plugin), agent-name collision warning, agent installer happy path, cross-source agent collision, install-wizard agent counting. Existing `ai-plugins-dev-shape` end-to-end fixture extended with agents on both standalone and plugin paths.
+
 ## [0.1.5] - 2026-04-23
 
 - Feature: `ccpp install <url> --prefer-latest` persists `policy: latest` on the source entry being added, so future `ccpp sync` runs pull the newest commit for that vendor without needing a global flip. Per-source only — does not touch the global `syncPolicy` default.

@@ -20,7 +20,9 @@ describe('parseManifest', () => {
     expect(plugin.commands.map((c) => c.name)).toEqual(['hello']);
     expect(plugin.commands[0]!.sourceFile).toContain('hello.md');
     expect(plugin.skills).toEqual([]);
+    expect(plugin.agents).toEqual([]);
     expect(result.standaloneCommands).toEqual([]);
+    expect(result.standaloneAgents).toEqual([]);
     expect(result.warnings).toEqual([]);
   });
 
@@ -59,9 +61,36 @@ describe('parseManifest', () => {
     const conflictResolver = result.plugins.find((p) => p.name === 'git-conflict-resolver')!;
     expect(conflictResolver.commands.map((c) => c.name)).toEqual(['resolve']);
     expect(conflictResolver.skills).toEqual([]);
+    expect(conflictResolver.agents).toEqual([]);
 
     expect(result.standaloneCommands.map((c) => c.name)).toEqual(['root-only']);
     expect(result.warnings).toEqual([]);
+  });
+
+  it('discovers agents — both standalone and plugin-scoped — alongside commands and skills', async () => {
+    const result = await parseManifest(join(FIXTURES, 'ai-plugins-dev-shape'));
+
+    expect(result.standaloneAgents.map((a) => a.name)).toEqual(['triage']);
+    expect(result.standaloneAgents[0]!.sourceFile).toContain('triage.md');
+
+    const prWorkflow = result.plugins.find((p) => p.name === 'ai-pr-workflow')!;
+    expect(prWorkflow.agents.map((a) => a.name)).toEqual(['pr-reviewer']);
+    expect(prWorkflow.agents[0]!.sourceFile).toContain('pr-reviewer.md');
+
+    // Plugins without an agents/ dir still report an empty array.
+    const conflictResolver = result.plugins.find((p) => p.name === 'git-conflict-resolver')!;
+    expect(conflictResolver.agents).toEqual([]);
+  });
+
+  it('warns (does not throw) when a standalone agent name collides with a plugin-scoped agent', async () => {
+    const result = await parseManifest(join(FIXTURES, 'agent-collision'));
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.code).toBe('agent-name-collision');
+    expect(result.warnings[0]!.message).toContain('dup');
+    expect(result.plugins.map((p) => p.name)).toEqual(['p']);
+    expect(result.standaloneAgents.map((a) => a.name)).toEqual(['dup']);
+    expect(result.plugins[0]!.agents.map((a) => a.name)).toEqual(['dup']);
   });
 
   it('throws a descriptive error mentioning the file path when plugin.json is missing a required field', async () => {

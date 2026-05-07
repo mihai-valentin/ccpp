@@ -693,7 +693,7 @@ function resolveSourceForUninstall(lockfile: Lockfile, name: string): string | n
 
 interface ListRow {
   name: string;
-  type: 'command' | 'skill';
+  type: 'command' | 'skill' | 'agent';
   sourceUrl: string;
   sha: string;
   lastSync: string;
@@ -704,6 +704,7 @@ function lockfileRows(lockfile: Lockfile, claudeHome: string): ListRow[] {
   const rows: ListRow[] = [];
   const commandsDir = join(claudeHome, 'commands');
   const skillsDir = join(claudeHome, 'skills');
+  const agentsDir = join(claudeHome, 'agents');
   const seenSkills = new Set<string>();
   for (const [destPath, entry] of Object.entries(lockfile.installed)) {
     if (destPath.startsWith(`${commandsDir}`) && destPath.endsWith('.md')) {
@@ -711,6 +712,16 @@ function lockfileRows(lockfile: Lockfile, claudeHome: string): ListRow[] {
       rows.push({
         name,
         type: 'command',
+        sourceUrl: entry.sourceUrl,
+        sha: entry.sourceSha,
+        lastSync: entry.installedAt,
+        destPath,
+      });
+    } else if (destPath.startsWith(`${agentsDir}`) && destPath.endsWith('.md')) {
+      const name = destPath.slice(agentsDir.length + 1, -'.md'.length);
+      rows.push({
+        name,
+        type: 'agent',
         sourceUrl: entry.sourceUrl,
         sha: entry.sourceSha,
         lastSync: entry.installedAt,
@@ -805,13 +816,16 @@ function emitWizardReport(params: WizardReportParams): void {
     );
     return;
   }
-  const { commandCount, skillNames } = summarizeInstalledTargets(result, common.claudeHome);
+  const { commandCount, skillNames, agentCount } = summarizeInstalledTargets(
+    result,
+    common.claudeHome,
+  );
 
   log('', common);
   log(bold('Install complete'), common);
   log(`  ${green('✓')} ${plan.url} ${dim(`@${synced.sha.slice(0, 7)} (${synced.ref})`)}`, common);
   log(
-    `    ${commandCount} command(s), ${skillNames.length} skill(s) in ${common.claudeHome}`,
+    `    ${commandCount} command(s), ${skillNames.length} skill(s), ${agentCount} agent(s) in ${common.claudeHome}`,
     common,
   );
   log(
@@ -940,7 +954,7 @@ async function main(argv: string[]): Promise<void> {
 
   attachCommonOptions(
     cli
-      .command('list', 'List commands and skills currently installed')
+      .command('list', 'List commands, skills, and agents currently installed')
       .action(async (opts: CommonOpts) => {
         await doList(opts);
       }),

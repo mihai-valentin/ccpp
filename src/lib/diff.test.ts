@@ -41,6 +41,7 @@ function buildManifest(overrides: Partial<ResolvedManifest> = {}): ResolvedManif
   return {
     sourceDir: sourceRoot,
     standaloneCommands: [],
+    standaloneAgents: [],
     plugins: [],
     ...overrides,
   };
@@ -231,6 +232,7 @@ describe('computeChangeset', () => {
               files: [skillMd, skillRef],
             },
           ],
+          agents: [],
         },
       ],
     });

@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { readFileSafe } from './fsutil.js';
 import type {
+  Agent,
   Conflict,
   LockInstalledEntry,
   Lockfile,
@@ -42,7 +43,7 @@ export interface RemoveFromLockfileResult {
 }
 
 interface PlannedFile {
-  /** Short name used for collision-lookup (command or skill). */
+  /** Short name used for collision-lookup (command, skill, or agent). */
   name: string;
   /** Absolute path on disk of the source file. */
   sourceAbsolute: string;
@@ -53,8 +54,8 @@ interface PlannedFile {
 }
 
 /**
- * Apply a parsed manifest to `<claudeHome>/` — write commands, skills, and
- * lockfile entries. Non-destructive on conflict: returns a {@link Conflict}
+ * Apply a parsed manifest to `<claudeHome>/` — write commands, skills, agents,
+ * and lockfile entries. Non-destructive on conflict: returns a {@link Conflict}
  * list the caller surfaces to the user. Always backs up an existing file
  * whose bytes differ from what is about to be written.
  */
@@ -156,6 +157,9 @@ function planFiles(opts: ApplyManifestOptions): PlannedFile[] {
   for (const cmd of opts.manifest.standaloneCommands) {
     pushCommand(items, seenDests, opts, cmd);
   }
+  for (const agent of opts.manifest.standaloneAgents) {
+    pushAgent(items, seenDests, opts, agent);
+  }
   for (const plugin of opts.manifest.plugins) {
     pushPluginContents(items, seenDests, opts, plugin);
   }
@@ -191,6 +195,26 @@ function pushPluginContents(
   for (const skill of plugin.skills) {
     pushSkill(items, seenDests, opts, skill);
   }
+  for (const agent of plugin.agents) {
+    pushAgent(items, seenDests, opts, agent);
+  }
+}
+
+function pushAgent(
+  items: PlannedFile[],
+  seenDests: Set<string>,
+  opts: ApplyManifestOptions,
+  agent: Agent,
+): void {
+  const destPath = join(opts.claudeHome, 'agents', `${agent.name}.md`);
+  if (seenDests.has(destPath)) return;
+  seenDests.add(destPath);
+  items.push({
+    name: agent.name,
+    sourceAbsolute: agent.sourceFile,
+    sourceRelative: relative(opts.manifest.sourceDir, agent.sourceFile),
+    destPath,
+  });
 }
 
 function pushSkill(

@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import type {
+  Agent,
   MarketplaceJson,
   PluginJson,
   PluginManifest,
@@ -13,7 +14,7 @@ const KEBAB_CASE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 export interface ParseManifestWarning {
-  code: 'command-name-collision';
+  code: 'command-name-collision' | 'agent-name-collision';
   message: string;
 }
 
@@ -40,14 +41,19 @@ export async function parseManifest(sourceDir: string): Promise<ParseManifestRes
   assertUniquePluginNames(plugins);
 
   const standaloneCommands = await scanStandaloneCommands(absSource);
+  const standaloneAgents = await scanStandaloneAgents(absSource);
 
-  const warnings = detectCommandCollisions(plugins, standaloneCommands);
+  const warnings = [
+    ...detectCommandCollisions(plugins, standaloneCommands),
+    ...detectAgentCollisions(plugins, standaloneAgents),
+  ];
 
   return {
     sourceDir: absSource,
     marketplaceName,
     plugins,
     standaloneCommands,
+    standaloneAgents,
     warnings,
   };
 }
@@ -97,6 +103,7 @@ async function loadPluginFromDir(pluginDir: string): Promise<PluginManifest> {
 
   const commands = await scanPluginCommands(pluginDir);
   const skills = await scanPluginSkills(pluginDir);
+  const agents = await scanPluginAgents(pluginDir);
 
   return {
     name: validated.name,
@@ -106,6 +113,7 @@ async function loadPluginFromDir(pluginDir: string): Promise<PluginManifest> {
     dir: pluginDir,
     commands,
     skills,
+    agents,
   };
 }
 
@@ -186,6 +194,28 @@ async function scanStandaloneCommands(sourceDir: string): Promise<SlashCommand[]
   return scanCommandsDir(join(sourceDir, 'commands'));
 }
 
+async function scanPluginAgents(pluginDir: string): Promise<Agent[]> {
+  return scanAgentsDir(join(pluginDir, 'agents'));
+}
+
+async function scanStandaloneAgents(sourceDir: string): Promise<Agent[]> {
+  return scanAgentsDir(join(sourceDir, 'agents'));
+}
+
+async function scanAgentsDir(dir: string): Promise<Agent[]> {
+  if (!(await pathExists(dir))) return [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const agents: Agent[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith('.md')) continue;
+    const name = entry.name.slice(0, -'.md'.length);
+    agents.push({ name, sourceFile: join(dir, entry.name) });
+  }
+  agents.sort((a, b) => a.name.localeCompare(b.name));
+  return agents;
+}
+
 async function scanCommandsDir(dir: string): Promise<SlashCommand[]> {
   if (!(await pathExists(dir))) return [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -255,6 +285,25 @@ function detectCommandCollisions(
         warnings.push({
           code: 'command-name-collision',
           message: `Command "${cmd.name}" exists as both a standalone command and inside plugin "${plugin.name}".`,
+        });
+      }
+    }
+  }
+  return warnings;
+}
+
+function detectAgentCollisions(
+  plugins: PluginManifest[],
+  standaloneAgents: Agent[],
+): ParseManifestWarning[] {
+  const standaloneNames = new Set(standaloneAgents.map((a) => a.name));
+  const warnings: ParseManifestWarning[] = [];
+  for (const plugin of plugins) {
+    for (const agent of plugin.agents) {
+      if (standaloneNames.has(agent.name)) {
+        warnings.push({
+          code: 'agent-name-collision',
+          message: `Agent "${agent.name}" exists as both a standalone agent and inside plugin "${plugin.name}".`,
         });
       }
     }

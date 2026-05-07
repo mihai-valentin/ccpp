@@ -140,27 +140,33 @@ async function askInstallHook(
 }
 
 /**
- * Tally how many commands and distinct skills a source ended up owning in
- * `~/.claude/` after an install — covering **all three outcome buckets**
- * (newly-created, updated, bytes-unchanged), not just the "installed"
- * array. Rationale: when the user re-runs the wizard over existing content
- * (e.g. after reinstalling ccpp itself), the files are still there and
- * `list` shows them, but `installed` is empty because the bytes matched.
- * Counting only `installed` read as "0 commands, 0 skills" even when the
- * source fully populated `~/.claude/`.
+ * Tally how many commands, distinct skills, and agents a source ended up
+ * owning in `~/.claude/` after an install — covering **all three outcome
+ * buckets** (newly-created, updated, bytes-unchanged), not just the
+ * "installed" array. Rationale: when the user re-runs the wizard over
+ * existing content (e.g. after reinstalling ccpp itself), the files are
+ * still there and `list` shows them, but `installed` is empty because the
+ * bytes matched. Counting only `installed` read as "0 commands, 0 skills"
+ * even when the source fully populated `~/.claude/`.
  */
 export function summarizeInstalledTargets(
   result: { installed: string[]; updated: string[]; unchanged: string[] },
   claudeHome: string,
-): { commandCount: number; skillNames: string[] } {
+): { commandCount: number; skillNames: string[]; agentCount: number } {
   const commandsPrefix = `${claudeHome}/commands/`;
   const skillsPrefix = `${claudeHome}/skills/`;
+  const agentsPrefix = `${claudeHome}/agents/`;
   const all = [...result.installed, ...result.updated, ...result.unchanged];
   let commandCount = 0;
+  let agentCount = 0;
   const skills = new Set<string>();
   for (const p of all) {
     if (p.startsWith(commandsPrefix)) {
       commandCount++;
+      continue;
+    }
+    if (p.startsWith(agentsPrefix)) {
+      agentCount++;
       continue;
     }
     if (p.startsWith(skillsPrefix)) {
@@ -168,5 +174,5 @@ export function summarizeInstalledTargets(
       if (name) skills.add(name);
     }
   }
-  return { commandCount, skillNames: [...skills].sort() };
+  return { commandCount, skillNames: [...skills].sort(), agentCount };
 }

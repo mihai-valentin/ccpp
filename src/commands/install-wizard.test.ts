@@ -256,4 +256,23 @@ describe('summarizeInstalledTargets', () => {
     expect(commandCount).toBe(1);
     expect(skillNames).toEqual([]);
   });
+
+  it('counts agents alongside commands and skills', () => {
+    const { commandCount, skillNames, agentCount } = summarizeInstalledTargets(
+      {
+        installed: [
+          `${home}/commands/a.md`,
+          `${home}/agents/triage.md`,
+          `${home}/agents/pr-reviewer.md`,
+          `${home}/skills/review/SKILL.md`,
+        ],
+        updated: [`${home}/agents/code-reviewer.md`],
+        unchanged: [],
+      },
+      home,
+    );
+    expect(commandCount).toBe(1);
+    expect(skillNames).toEqual(['review']);
+    expect(agentCount).toBe(3);
+  });
 });

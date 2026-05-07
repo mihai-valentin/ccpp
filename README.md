@@ -1,6 +1,6 @@
 # ccpp — Claude Code Plugin Proxy
 
-Private skill / slash-command distribution for Claude Code teams. Syncs resources from private git repos (Bitbucket, GitLab, GitHub, self-hosted) into `~/.claude/` — preserving **short command names**, using **native live-reload**, and working with whatever git auth the dev already has.
+Private skill / slash-command / subagent distribution for Claude Code teams. Syncs resources from private git repos (Bitbucket, GitLab, GitHub, self-hosted) into `~/.claude/` — preserving **short names**, using **native live-reload**, and working with whatever git auth the dev already has.
 
 Installable via npm; daily invocation via `npx ccpp sync`.
 
@@ -57,9 +57,9 @@ npx ccpp uninstall ai-plugins
 
 ## How it works
 
-ccpp reads each source's `.claude-plugin/marketplace.json` — the same manifest shape Claude Code already uses — and, when that file is missing, falls back to a convention scan: any directory under `plugins/<name>/` with a `.claude-plugin/plugin.json` is a plugin, and any `commands/*.md` at the repo root is a standalone slash command. This means existing private repos that pre-date the marketplace format work without authoring a manifest first.
+ccpp reads each source's `.claude-plugin/marketplace.json` — the same manifest shape Claude Code already uses — and, when that file is missing, falls back to a convention scan: any directory under `plugins/<name>/` with a `.claude-plugin/plugin.json` is a plugin; any `commands/*.md` at the repo root is a standalone slash command; any `agents/*.md` at the repo root or under `plugins/<name>/agents/` is a Claude Code subagent. This means existing private repos that pre-date the marketplace format work without authoring a manifest first.
 
-Content is written into Claude Code's native auto-discovery paths under `~/.claude/`. That means Claude Code picks up changes on its own — no `/reload-plugins` or restart required. Short command names (e.g. `/git-commit`) are preserved; ccpp does **not** rewrite them to namespaced forms.
+Content is written into Claude Code's native auto-discovery paths under `~/.claude/` — `commands/`, `skills/`, and `agents/`. Claude Code picks up changes on its own — no `/reload-plugins` or restart required. Short names (e.g. `/git-commit`, agent `triage`) are preserved; ccpp does **not** rewrite them to namespaced forms.
 
 Every `ccpp install` and `ccpp sync` updates `ccpp.lock.json`, pinning each source to the exact commit SHA that was materialised on disk. The lockfile is what makes teammate installs byte-identical. What governs *when* upstream changes land — and whether you see a diff-preview prompt before they do — is the per-source `syncPolicy` plus `autoAccept` flag, both introduced in v0.1.1 and documented in the [Sync policy](#sync-policy) and [Auto-update](#auto-update-via-sessionstart-hook) sections below. By default (`syncPolicy: pinned`, `autoAccept: false`), every `ccpp sync` shows you an added / modified / removed summary and asks `[y/N]` before touching `~/.claude/`.
 

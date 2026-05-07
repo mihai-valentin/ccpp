@@ -33,6 +33,7 @@ function buildManifest(overrides: Partial<ResolvedManifest> = {}): ResolvedManif
   return {
     sourceDir: sourceRoot,
     standaloneCommands: [],
+    standaloneAgents: [],
     plugins: [],
     ...overrides,
   };
@@ -78,6 +79,7 @@ describe('applyManifest', () => {
                 files: [skillMd, skillRef],
               },
             ],
+            agents: [],
           },
         ],
       }),
@@ -112,6 +114,84 @@ describe('applyManifest', () => {
     expect(entry.sourceSha).toBe('sha-1');
     expect(entry.sourcePath).toBe(join('commands', 'hello.md'));
     expect(entry.installedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('writes standalone agents and plugin agents into claudeHome/agents/', async () => {
+    const triageSrc = await writeSourceFile('agents/triage.md', 'triage body');
+    const reviewerSrc = await writeSourceFile(
+      'plugins/pr/agents/pr-reviewer.md',
+      'pr-reviewer body',
+    );
+
+    const lockfile: Lockfile = emptyLockfile();
+    const result = await applyManifest({
+      manifest: buildManifest({
+        standaloneAgents: [{ name: 'triage', sourceFile: triageSrc }],
+        plugins: [
+          {
+            name: 'pr',
+            version: '0.1.0',
+            description: 'pr plugin',
+            dir: join(sourceRoot, 'plugins/pr'),
+            commands: [],
+            skills: [],
+            agents: [{ name: 'pr-reviewer', sourceFile: reviewerSrc }],
+          },
+        ],
+      }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    });
+
+    expect(result.installed.sort()).toEqual(
+      [
+        join(claudeHome, 'agents', 'triage.md'),
+        join(claudeHome, 'agents', 'pr-reviewer.md'),
+      ].sort(),
+    );
+    expect(result.conflicts).toEqual([]);
+    expect(await listDir(join(claudeHome, 'agents'))).toEqual(['pr-reviewer.md', 'triage.md']);
+    expect(await read(join(claudeHome, 'agents', 'triage.md'))).toBe('triage body');
+    expect(await read(join(claudeHome, 'agents', 'pr-reviewer.md'))).toBe('pr-reviewer body');
+
+    const triageEntry = lockfile.installed[join(claudeHome, 'agents', 'triage.md')]!;
+    expect(triageEntry.sourcePath).toBe(join('agents', 'triage.md'));
+    expect(triageEntry.sourceUrl).toBe('https://x/one.git');
+  });
+
+  it('surfaces a Conflict when two sources want the same agent dest', async () => {
+    const a = await writeSourceFile('agents/triage.md', 'A body');
+    const lockfile: Lockfile = emptyLockfile();
+    await applyManifest({
+      manifest: buildManifest({
+        standaloneAgents: [{ name: 'triage', sourceFile: a }],
+      }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-A',
+      claudeHome,
+      lockfile,
+    });
+
+    const b = await writeSourceFile('agents/triage.md', 'B body');
+    const result = await applyManifest({
+      manifest: buildManifest({
+        standaloneAgents: [{ name: 'triage', sourceFile: b }],
+      }),
+      sourceUrl: 'https://x/two.git',
+      sourceSha: 'sha-B',
+      claudeHome,
+      lockfile,
+    });
+
+    expect(result.installed).toEqual([]);
+    expect(result.updated).toEqual([]);
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts[0]!.name).toBe('triage');
+    expect(result.conflicts[0]!.destPath).toBe(join(claudeHome, 'agents', 'triage.md'));
+    // Existing-source bytes are untouched.
+    expect(await read(join(claudeHome, 'agents', 'triage.md'))).toBe('A body');
   });
 
   it('is a no-op on a clean re-install (everything reported as unchanged)', async () => {
@@ -289,6 +369,7 @@ describe('removeFromLockfile', () => {
                 files: [skillMd],
               },
             ],
+            agents: [],
           },
         ],
       }),
