@@ -54,7 +54,7 @@ test:
 typecheck:
 	@npm run typecheck
 
-## lint: biome check. Advisory — NOT in the CI gate (pre-existing style drift).
+## lint: biome check. Advisory — runs in CI as continue-on-error, not a gate.
 .PHONY: lint
 lint:
 	@npm run lint

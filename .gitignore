@@ -18,13 +18,13 @@ ccpp.lock
 ccpp.lock.json
 ccpp.config.json
 
-# Root-session-owned artifacts (managed by xlnf root, not by ccpp's own git)
+# Local-only project notes / Claude Code session memory — kept out of the
+# tracked tree so contributors aren't forced to share their personal scratch.
 CLAUDE.md
 idea.md
 .claude/
 
-# Shawarma orchestration state (per-project DB, runs, task backups)
+# Per-project scratch directories some Claude Code orchestrators write into.
+# Harmless to ignore even if the contributor doesn't use one.
 .agent-orch/
-
-# Shawarma worktrees scratch area
 .worktrees/

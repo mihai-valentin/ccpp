@@ -4,10 +4,6 @@ Private skill / slash-command distribution for Claude Code teams. Syncs resource
 
 Installable via npm; daily invocation via `npx ccpp sync`.
 
-Part of the [xlnf](https://mihai-valentin.github.io/xlnf/) portfolio.
-
-> Name note: `ccpp` (Claude Code Plugin Proxy) is a working slug and will likely be renamed before public release. The npm package name is decided at that point.
-
 ## Install
 
 ```bash
@@ -257,7 +253,7 @@ make release-dry   # verify + npm publish --dry-run (rehearsal, no upload)
 make release       # verify + publish (refuses on a dirty tree or placeholder URL)
 ```
 
-`make ci` is the single command a CI runner (GitHub Actions, Bitbucket Pipelines, self-hosted) needs to invoke on every push. Under `CI=1` it uses `npm ci` for lockfile-reproducible installs; locally it uses `npm install`. The `lint` target runs `biome check` but is deliberately **not** in the CI gate — the codebase has some existing style-advisory drift (`noNonNullAssertion`, `useLiteralKeys`) that will be cleaned up separately.
+`make ci` is the single command a CI runner (GitHub Actions, Bitbucket Pipelines, self-hosted) needs to invoke on every push. Under `CI=1` it uses `npm ci` for lockfile-reproducible installs; locally it uses `npm install`. The `lint` target runs `biome check` and is wired into the GitHub Actions QA workflow as an advisory step (`continue-on-error`) so style regressions surface in the PR view without blocking the gate.
 
 Fresh-clone bootstrap:
 
@@ -268,4 +264,4 @@ make install
 make verify
 ```
 
-Test layout — unit tests live next to the source (`src/**/*.test.ts`) and CLI / end-to-end tests in `tests/` (including `tests/integration/` for bare-git-fixture-driven flows). All 158 tests should run in under 10 seconds.
+Test layout — unit tests live next to the source (`src/**/*.test.ts`) and CLI / end-to-end tests in `tests/` (including `tests/integration/` for bare-git-fixture-driven flows). All 175 tests run in under 10 seconds.

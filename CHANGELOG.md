@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 
 - Fix: install wizard's post-install report now counts `installed + updated + unchanged` files, not just newly-created ones. Re-running the wizard over already-populated `~/.claude/` previously showed "0 command(s), 0 skill(s)" even though `ccpp list` correctly saw the full set. Report also now carries a 3-way breakdown line under the total.
 - Library: counting logic extracted into pure `summarizeInstalledTargets()` in `src/commands/install-wizard.ts` and pinned by a named regression test plus shape tests.
-- Docs: scrubbed all Omniconvert references from public-facing files — README, `docs/exit-codes.md`, `docs/auto-update.md`, test URL fixtures. Test author-name fixtures renamed to "Example Org AI Tooling". `MIGRATION.md` deleted (Omniconvert-specific guide, no generic content to salvage).
+- Docs: vendor-agnostic example URLs across README, `docs/exit-codes.md`, `docs/auto-update.md`, and test fixtures. Test author-name fixtures use "Example Org AI Tooling".
 
 ## [0.1.3] - 2026-04-23
 
