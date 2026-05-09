@@ -262,6 +262,79 @@ describe('exit codes', () => {
     }
   }, 30_000);
 
+  it('install <url>@<sha> shorthand pins to that commit, not HEAD', async () => {
+    const fx = await createLocalGitFixture('ccpp-cli-shorthand-sha');
+    try {
+      await fs.mkdir(join(fx.workPath, 'commands'), { recursive: true });
+      const sha1 = await fx.advance('commands/one.md', '# v1\n');
+      // Advance HEAD past the pinned commit so we can prove we didn't take latest.
+      await fx.advance('commands/one.md', '# v2\n');
+
+      // Seed config so the install records the source (existing semantics:
+      // plain install only writes config when a config already exists).
+      const initRes = await cli(['init'], { cwd: scratch });
+      expect(initRes.code).toBe(0);
+
+      const claudeHome = join(scratch, 'claude');
+      const cacheRoot = join(scratch, 'cache');
+
+      const { code } = await cli(
+        ['install', `${fx.url}@${sha1}`, '--claude-home', claudeHome],
+        { cwd: scratch, env: { CCPP_CACHE: cacheRoot } },
+      );
+      expect(code).toBe(0);
+
+      // The installed file content reflects the pinned SHA, not the HEAD SHA.
+      const installed = await fs.readFile(join(claudeHome, 'commands', 'one.md'), 'utf8');
+      expect(installed.replace(/\r\n/g, '\n')).toBe('# v1\n');
+
+      // The URL is stored stripped; the ref is recorded separately.
+      const cfg = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
+      expect(cfg.sources).toEqual([{ ref: sha1, url: fx.url }]);
+
+      // Lockfile pins the same SHA.
+      const lock = JSON.parse(await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8'));
+      expect(lock.sources[fx.url].sha).toBe(sha1);
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
+
+  it('rejects install when <url>@<ref> shorthand disagrees with --ref', async () => {
+    const { code, stderr } = await cli(
+      ['install', 'https://example.com/foo.git@abc', '--ref', 'def'],
+      { cwd: scratch },
+    );
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/ref conflict/i);
+    expect(stderr).toContain('@abc');
+    expect(stderr).toContain('def');
+  });
+
+  it('accepts <url>@<ref> shorthand together with a matching --ref', async () => {
+    const fx = await createLocalGitFixture('ccpp-cli-shorthand-match');
+    try {
+      await fs.mkdir(join(fx.workPath, 'commands'), { recursive: true });
+      const sha = await fx.advance('commands/one.md', '# x\n');
+
+      const initRes = await cli(['init'], { cwd: scratch });
+      expect(initRes.code).toBe(0);
+
+      const claudeHome = join(scratch, 'claude');
+      const cacheRoot = join(scratch, 'cache');
+      const { code } = await cli(
+        ['install', `${fx.url}@${sha}`, '--ref', sha, '--claude-home', claudeHome],
+        { cwd: scratch, env: { CCPP_CACHE: cacheRoot } },
+      );
+      expect(code).toBe(0);
+
+      const cfg = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
+      expect(cfg.sources).toEqual([{ ref: sha, url: fx.url }]);
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
+
   it('exits 3 when two sources provide the same command', async () => {
     const a = await createLocalGitFixture('ccpp-cli-collide-a');
     const b = await createLocalGitFixture('ccpp-cli-collide-b');

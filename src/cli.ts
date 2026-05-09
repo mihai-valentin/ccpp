@@ -31,6 +31,7 @@ import { cloneOrUpdate, parseRepoUrl } from './lib/git.js';
 import { applyManifest, removeFromLockfile } from './lib/installer.js';
 import { LOCKFILE_FILENAME, readLockfile, writeLockfile } from './lib/lockfile.js';
 import { parseManifest } from './lib/manifest.js';
+import { splitUrlRef } from './lib/url.js';
 import {
   bold,
   dim,
@@ -77,6 +78,25 @@ interface ResolvedCommon {
   lockfilePath: string;
   json: boolean;
   quiet: boolean;
+}
+
+/**
+ * Reconcile a `<url>@<ref>` shorthand with an explicit `--ref` flag. Returns
+ * the stripped URL and the effective ref. If the URL carries `@<ref>` and a
+ * different `--ref` is passed, errors out — the two must agree (or only one
+ * is supplied).
+ */
+function resolveSourceUrlAndRef(
+  rawUrl: string,
+  flagRef: string | undefined,
+): { url: string; ref: string | undefined } {
+  const split = splitUrlRef(rawUrl);
+  if (split.ref !== undefined && flagRef !== undefined && split.ref !== flagRef) {
+    throw new UserError(
+      `ccpp: ref conflict — URL specifies @${split.ref} but --ref ${flagRef} was passed. Pick one.`,
+    );
+  }
+  return { url: split.url, ref: split.ref ?? flagRef };
 }
 
 function commonPaths(opts: CommonOpts): ResolvedCommon {
@@ -126,9 +146,11 @@ async function doInit(
     );
   }
   const config = emptyConfig();
+  let resolved: { url: string; ref: string | undefined } | null = null;
   if (opts.source) {
-    const src: ConfigSource = { url: opts.source };
-    if (opts.ref) src.ref = opts.ref;
+    resolved = resolveSourceUrlAndRef(opts.source, opts.ref);
+    const src: ConfigSource = { url: resolved.url };
+    if (resolved.ref) src.ref = resolved.ref;
     config.sources.push(src);
   }
   await writeConfig(common.configPath, config);
@@ -136,8 +158,8 @@ async function doInit(
     process.stdout.write(`${JSON.stringify({ configPath: common.configPath, config })}\n`);
   } else {
     log(`${green('✓')} wrote ${common.configPath}`, common);
-    if (opts.source) {
-      log(`  first source: ${opts.source}${opts.ref ? `@${opts.ref}` : ''}`, common);
+    if (resolved) {
+      log(`  first source: ${resolved.url}${resolved.ref ? `@${resolved.ref}` : ''}`, common);
     } else {
       log(dim('  add sources with `ccpp install <url>`.'), common);
     }
@@ -279,7 +301,7 @@ async function installSource(params: InstallSourceParams): Promise<InstallSource
 }
 
 async function doInstall(
-  url: string | undefined,
+  rawUrl: string | undefined,
   opts: CommonOpts & {
     ref?: string;
     prefer?: boolean;
@@ -288,7 +310,7 @@ async function doInstall(
     yes?: boolean;
   },
 ): Promise<void> {
-  if (typeof url !== 'string' || url.length === 0) {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
     await doInstallInteractive(opts);
     return;
   }
@@ -297,6 +319,7 @@ async function doInstall(
       'ccpp install: --prefer-latest writes per-source policy to ccpp.config.json and is incompatible with --scratch.',
     );
   }
+  const { url, ref } = resolveSourceUrlAndRef(rawUrl, opts.ref);
   const common = commonPaths(opts);
 
   let existing: CcppConfig | null = null;
@@ -312,7 +335,7 @@ async function doInstall(
     if (existing === null) existing = emptyConfig();
     if (!existing.sources.some((s) => s.url === url)) {
       const src: ConfigSource = { url };
-      if (opts.ref) src.ref = opts.ref;
+      if (ref) src.ref = ref;
       existing.sources.push(src);
     }
     await applyPreferLatest(existing, url, Boolean(opts.yes));
@@ -325,7 +348,7 @@ async function doInstall(
     scratch: Boolean(opts.scratch),
     forcePreferIncoming: Boolean(opts.prefer) || Boolean(opts.yes),
   };
-  if (opts.ref) installParams.ref = opts.ref;
+  if (ref) installParams.ref = ref;
   // Only offer interactive conflict resolution when stdin is a TTY and the
   // user did not pre-declare a winner via `--prefer` or `--yes`. Scripts keep
   // their old exit-3 behavior (CollisionError is thrown if no resolver picks).
@@ -890,7 +913,7 @@ async function main(argv: string[]): Promise<void> {
     cli
       .command('init', 'Create a ccpp.config.json in the current directory')
       .option('--source <url>', 'First source URL to record in the config')
-      .option('--ref <ref>', 'Optional ref (branch/tag) for the first source')
+      .option('--ref <ref>', 'Optional ref (branch/tag/commit) for the first source (alternative to --source <url>@<ref> shorthand)')
       .option('--force', 'Overwrite an existing config')
       .action(async (opts: CommonOpts & { source?: string; ref?: string; force?: boolean }) => {
         await doInit(opts);
@@ -901,9 +924,9 @@ async function main(argv: string[]): Promise<void> {
     cli
       .command(
         'install [url]',
-        'Clone a source and install it; no <url> → first-time interactive wizard',
+        'Clone a source and install it; no <url> → first-time interactive wizard. URL accepts <url>@<ref> shorthand.',
       )
-      .option('--ref <ref>', 'Optional ref (branch/tag) to check out')
+      .option('--ref <ref>', 'Optional ref (branch/tag/commit) to check out (alternative to <url>@<ref> shorthand)')
       .option('--prefer', 'On collision, prefer this install over existing lockfile entries')
       .option('--prefer-latest', 'Persist policy=latest on this source (future syncs pull newest)')
       .option('--yes', 'Auto-confirm prompts during this install run (ack + collisions)')

@@ -42,6 +42,10 @@ npx ccpp init
 npx ccpp install git@bitbucket.org:your-org/ai-plugins.git
 npx ccpp install https://github.com/your-org/claude-plugins.git
 
+# 2a. (optional) pin to a tag, branch, or commit via the @<ref> shorthand
+npx ccpp install git@bitbucket.org:your-org/ai-plugins.git@v1.0.0
+npx ccpp install https://github.com/your-org/claude-plugins.git@deadbeef
+
 # 2b. (optional) hands-off install — per-source auto-update, skip every prompt for this run
 npx ccpp install git@bitbucket.org:your-org/ai-plugins.git --prefer-latest --yes
 

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-05-09
+
+- Feature: **`<url>@<ref>` shorthand** on `ccpp install` and `ccpp init --source`. `ccpp install git@bitbucket.org:my/repo@v1.0.0` is equivalent to `ccpp install git@bitbucket.org:my/repo --ref v1.0.0`. Works with branches, tags, and full or short commit SHAs. The trailing `@<ref>` is recognized only when the `@` appears after the last `/` or `:`, so SCP-style SSH URLs (`git@host:path`) and HTTPS auth (`https://user:pass@host/path`) keep working unchanged. Refs containing `/` (e.g. `feature/foo`) can't ride the shorthand — fall back to `--ref feature/foo`.
+- Feature: **commit-SHA refs are now actually supported.** Previously `--ref <sha>` failed because the underlying clone path used `git clone --depth 1 --branch <ref>`, which only accepts named refs. ccpp now detects SHA-shaped refs and switches to a non-shallow clone with a plain `git checkout <sha>` (auto-unshallowing existing shallow caches when needed). Branch and tag refs continue to use the shallow `--branch` path — same fast clone as before.
+- CLI: passing `<url>@<ref>` and `--ref` together errors out (exit 1) when they disagree. Identical refs are accepted as a no-op.
+- Tests: 13 new cases — 10 unit tests for the URL parser (SCP, HTTPS, HTTPS-with-auth, mixed forms, slash-in-ref fallback, edge cases), and 3 CLI-level integration tests (commit-pin happy path, ref-conflict error, matching-ref no-op).
+
 ## [0.2.0] - 2026-05-07
 
 - Feature: **subagent support**. ccpp now discovers and installs Claude Code subagents alongside commands and skills. Source convention is `agents/<name>.md` at repo root for standalone agents and `plugins/<name>/agents/<name>.md` for plugin-bundled agents — same shape as `commands/`. Files install to `~/.claude/agents/<name>.md`; Claude Code auto-discovers them, no `/reload-plugins` needed. Existing repos without an `agents/` directory keep working unchanged — agents are purely additive.

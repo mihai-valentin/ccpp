@@ -88,26 +88,47 @@ export async function cloneOrUpdate(
   const cacheRoot = opts.cacheRoot ?? defaultCacheRoot();
   const localPath = cachePathFor(url, cacheRoot);
 
+  // `git clone --depth 1 --branch <ref>` only works for branches and tags.
+  // Commit SHAs need a non-shallow clone and no --branch arg, then a plain
+  // `git checkout <sha>` (no `origin/<sha>` reset since that ref doesn't
+  // exist on the remote).
+  const refIsSha = opts.ref !== undefined && looksLikeSha(opts.ref);
+
   const alreadyCloned = await pathExists(join(localPath, '.git'));
   if (!alreadyCloned) {
     await fs.mkdir(join(localPath, '..'), { recursive: true });
     const cloneArgs: string[] = ['clone'];
-    if (!opts.fullClone) cloneArgs.push('--depth', '1');
-    if (opts.ref !== undefined) cloneArgs.push('--branch', opts.ref);
+    if (!opts.fullClone && !refIsSha) cloneArgs.push('--depth', '1');
+    if (opts.ref !== undefined && !refIsSha) cloneArgs.push('--branch', opts.ref);
     cloneArgs.push('--', url, localPath);
     await runGit(cloneArgs, { cwd: undefined });
   } else {
+    if (refIsSha && (await isShallowRepo(localPath))) {
+      // Need full history to resolve an arbitrary SHA.
+      await runGit(['fetch', '--unshallow', 'origin'], { cwd: localPath });
+    }
     await runGit(['fetch', '--tags', '--prune', 'origin'], { cwd: localPath });
   }
 
   const ref = opts.ref ?? (await resolveDefaultBranch(localPath));
   await runGit(['checkout', ref], { cwd: localPath });
-  const resetTarget = (await hasRef(localPath, `origin/${ref}`)) ? `origin/${ref}` : ref;
-  await runGit(['reset', '--hard', resetTarget], { cwd: localPath });
+  if (!refIsSha) {
+    const resetTarget = (await hasRef(localPath, `origin/${ref}`)) ? `origin/${ref}` : ref;
+    await runGit(['reset', '--hard', resetTarget], { cwd: localPath });
+  }
 
   const sha = (await runGit(['rev-parse', 'HEAD'], { cwd: localPath })).stdout.trim();
 
   return { localPath, sha, ref };
+}
+
+function looksLikeSha(ref: string): boolean {
+  return /^[0-9a-f]{4,40}$/i.test(ref);
+}
+
+async function isShallowRepo(repoDir: string): Promise<boolean> {
+  const out = await runGit(['rev-parse', '--is-shallow-repository'], { cwd: repoDir });
+  return out.stdout.trim() === 'true';
 }
 
 export async function clearCache(url?: string, cacheRoot?: string): Promise<void> {
