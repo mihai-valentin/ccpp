@@ -38,7 +38,9 @@ import {
   bold,
   dim,
   disableColor,
+  formatTable,
   green,
+  isInteractive,
   promptChoice,
   promptLine,
   promptYesNo,
@@ -380,10 +382,6 @@ async function applyPreferLatest(config: CcppConfig, url: string, yes: boolean):
   }
 }
 
-function isInteractive(): boolean {
-  return Boolean(process.stdin.isTTY) && Boolean(process.stderr.isTTY);
-}
-
 function realWizardIO(): WizardIO {
   return {
     out: (line: string) => process.stdout.write(`${line}\n`),
@@ -597,17 +595,7 @@ async function doList(opts: CommonOpts): Promise<void> {
     header,
     ...rows.map((r) => [r.name, r.type, r.sourceUrl, r.sha.slice(0, 7), r.lastSync]),
   ];
-  const widths = table[0]!.map((_, i) =>
-    Math.max(...table.map((row) => stripColor(row[i] ?? '').length)),
-  );
-  for (const row of table) {
-    log(
-      row
-        .map((cell, i) => cell + ' '.repeat(Math.max(0, widths[i]! - stripColor(cell).length)))
-        .join('  '),
-      common,
-    );
-  }
+  for (const line of formatTable(table)) log(line, common);
 }
 
 async function doUninstall(name: string, opts: CommonOpts): Promise<void> {
@@ -861,11 +849,6 @@ function emitWizardReport(params: WizardReportParams): void {
   log(`  ${dim('see state:')}          ccpp status`, common);
   log(`  ${dim('add another source:')} ccpp install <url>`, common);
   log(`  ${dim('exit codes / docs:')}  docs/exit-codes.md`, common);
-}
-
-function stripColor(s: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape stripping — \x1b is load-bearing.
-  return s.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 function classifyAndExit(err: unknown): never {

@@ -22,6 +22,40 @@ export function disableColor(): void {
   process.env.CCPP_NO_COLOR = '1';
 }
 
+/** Strip ANSI escape sequences (SGR colors only — not full ECMA-48). */
+export function stripColor(s: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: SGR escape stripping — \x1b is load-bearing.
+  return s.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
+ * True when both stdin and stderr are TTYs — used to decide whether
+ * interactive prompts can be surfaced. Centralized so every subcommand
+ * applies the same rule.
+ */
+export function isInteractive(): boolean {
+  return Boolean(process.stdin.isTTY) && Boolean(process.stderr.isTTY);
+}
+
+/**
+ * Render a 2-D string array as a column-aligned table, two-space gutter
+ * between columns. Cells may contain ANSI color codes — `stripColor` is used
+ * for width computation so widths stay correct under color.
+ */
+export function formatTable(rows: readonly (readonly string[])[]): string[] {
+  if (rows.length === 0) return [];
+  const ncols = rows[0]!.length;
+  const widths: number[] = [];
+  for (let i = 0; i < ncols; i++) {
+    widths.push(Math.max(...rows.map((r) => stripColor(r[i] ?? '').length)));
+  }
+  return rows.map((row) =>
+    row
+      .map((cell, i) => cell + ' '.repeat(Math.max(0, widths[i]! - stripColor(cell).length)))
+      .join('  '),
+  );
+}
+
 /**
  * Write `message` to stderr, read one line from stdin, and resolve true
  * iff the reply was y/yes (case-insensitive, trimmed). Any other input —

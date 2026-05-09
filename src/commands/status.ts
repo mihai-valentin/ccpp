@@ -8,7 +8,7 @@ import {
 import { UserError } from '../lib/errors.js';
 import { readLockfile } from '../lib/lockfile.js';
 import { type SyncLogEntry, defaultLogPath, readSyncLog } from '../lib/log.js';
-import { bold, dim, green, red, yellow } from '../lib/term.js';
+import { bold, dim, formatTable, green, red, yellow } from '../lib/term.js';
 import type { Lockfile } from '../lib/types.js';
 
 export interface RunStatusOpts {
@@ -124,15 +124,7 @@ function emitHuman(report: StatusReport): void {
         renderStatus(s),
       ]);
     }
-    const widths = rows[0]!.map((_c, i) =>
-      Math.max(...rows.map((r) => stripColor(r[i] ?? '').length)),
-    );
-    for (const row of rows) {
-      const line = row
-        .map((cell, i) => cell + ' '.repeat(Math.max(0, widths[i]! - stripColor(cell).length)))
-        .join('  ');
-      process.stdout.write(`${line}\n`);
-    }
+    for (const line of formatTable(rows)) process.stdout.write(`${line}\n`);
   }
 
   if (report.recent.length > 0) {
@@ -165,7 +157,3 @@ function renderStatus(row: StatusRow): string {
   return row.detail ? `${base} ${dim(`(${row.detail})`)}` : base;
 }
 
-function stripColor(s: string): string {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: strips ANSI escape sequences
-  return s.replace(/\x1b\[[0-9;]*m/g, '');
-}
