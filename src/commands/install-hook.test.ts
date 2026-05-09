@@ -1,8 +1,10 @@
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { isCcppBlock, runInstallHook } from './install-hook.js';
+import { HOOK_SCRIPT_BODY, isCcppBlock, runInstallHook } from './install-hook.js';
+
+const projectRoot = resolve(__dirname, '..', '..');
 
 let scratch: string;
 let claudeHome: string;
@@ -170,6 +172,20 @@ describe('runInstallHook — project scope', () => {
     const hooks = s.hooks as Record<string, unknown>;
     expect(hooks.UserPromptSubmit).toBeDefined();
     expect(hooks.SessionStart).toBeDefined();
+  });
+});
+
+describe('HOOK_SCRIPT_BODY ↔ scripts/hook.sh parity', () => {
+  it('embedded hook script and the docs copy run the same commands', async () => {
+    // Strip comments + blank lines so the parity check pins runtime
+    // behavior, not the human-readable header (which legitimately differs).
+    const executableLines = (script: string): string[] =>
+      script
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0 && !l.startsWith('#'));
+    const onDisk = await fs.readFile(join(projectRoot, 'scripts', 'hook.sh'), 'utf8');
+    expect(executableLines(HOOK_SCRIPT_BODY)).toEqual(executableLines(onDisk));
   });
 });
 
