@@ -105,7 +105,7 @@ async function askSyncPolicy(io: WizardIO): Promise<SyncPolicy> {
     if (choice === 'pinned') return 'pinned';
     io.out('');
     io.out(yellow(POLICY_LATEST_WARNING));
-    const ok = await io.promptYesNo('');
+    const ok = await io.promptYesNo('Continue?');
     if (ok) return 'latest';
     io.out(`  ${dim('keeping safer default — pick again')}`);
   }

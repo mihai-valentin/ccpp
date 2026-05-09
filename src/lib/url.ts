@@ -5,8 +5,10 @@
  * last `/` or `:` in the input — otherwise it's part of an SCP-style SSH
  * URL (`git@host:path`) or HTTPS auth (`https://user:pass@host/path`).
  *
- * Refs containing `/`, `:`, whitespace, or `@` itself are not allowed via
- * shorthand; users must fall back to `--ref` for those.
+ * Refs containing `/`, `:`, or whitespace are not allowed via shorthand;
+ * users must fall back to `--ref` for those (multiple `@` are tolerated —
+ * the parser splits on the *last* one). Splits also refuse `@` at index 0
+ * because there's no URL before the separator.
  */
 export function splitUrlRef(input: string): { url: string; ref?: string } {
   const lastAt = input.lastIndexOf('@');

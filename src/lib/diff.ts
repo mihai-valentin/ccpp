@@ -99,6 +99,9 @@ export function hasChanges(changeset: Changeset): boolean {
 
 function planFiles(opts: ComputeChangesetOptions): PlannedFile[] {
   const items: PlannedFile[] = [];
+  // Dedup destinations across resource kinds — e.g. a standalone agent and a
+  // plugin-scoped agent could both target ~/.claude/agents/<name>.md. The
+  // first pusher wins; later writers are silently dropped from the plan.
   const seenDests = new Set<string>();
   for (const cmd of opts.manifest.standaloneCommands) {
     pushCommand(items, seenDests, opts.claudeHome, cmd);

@@ -11,6 +11,8 @@ import { type SyncLogEntry, defaultLogPath, readSyncLog } from '../lib/log.js';
 import { bold, dim, formatShortSha, formatTable, green, red, yellow } from '../lib/term.js';
 import type { Lockfile } from '../lib/types.js';
 
+const DEFAULT_RECENT_LIMIT = 5;
+
 export interface RunStatusOpts {
   configPath: string;
   lockfilePath: string;
@@ -96,7 +98,7 @@ export async function runStatus(opts: RunStatusOpts): Promise<StatusReport> {
     return row;
   });
 
-  const recentLimit = opts.recentLimit ?? 5;
+  const recentLimit = opts.recentLimit ?? DEFAULT_RECENT_LIMIT;
   const recent = log.slice(-recentLimit);
 
   const report: StatusReport = { sources: rows, recent };
