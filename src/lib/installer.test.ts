@@ -33,6 +33,7 @@ function buildManifest(overrides: Partial<ResolvedManifest> = {}): ResolvedManif
   return {
     sourceDir: sourceRoot,
     standaloneCommands: [],
+    standaloneSkills: [],
     standaloneAgents: [],
     plugins: [],
     ...overrides,

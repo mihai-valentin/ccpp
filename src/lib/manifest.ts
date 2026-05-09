@@ -14,7 +14,7 @@ const KEBAB_CASE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 export interface ParseManifestWarning {
-  code: 'command-name-collision' | 'agent-name-collision';
+  code: 'command-name-collision' | 'skill-name-collision' | 'agent-name-collision';
   message: string;
 }
 
@@ -41,10 +41,12 @@ export async function parseManifest(sourceDir: string): Promise<ParseManifestRes
   assertUniquePluginNames(plugins);
 
   const standaloneCommands = await scanStandaloneCommands(absSource);
+  const standaloneSkills = await scanStandaloneSkills(absSource);
   const standaloneAgents = await scanStandaloneAgents(absSource);
 
   const warnings = [
     ...detectCommandCollisions(plugins, standaloneCommands),
+    ...detectSkillCollisions(plugins, standaloneSkills),
     ...detectAgentCollisions(plugins, standaloneAgents),
   ];
 
@@ -53,6 +55,7 @@ export async function parseManifest(sourceDir: string): Promise<ParseManifestRes
     marketplaceName,
     plugins,
     standaloneCommands,
+    standaloneSkills,
     standaloneAgents,
     warnings,
   };
@@ -231,7 +234,14 @@ async function scanCommandsDir(dir: string): Promise<SlashCommand[]> {
 }
 
 async function scanPluginSkills(pluginDir: string): Promise<Skill[]> {
-  const skillsRoot = join(pluginDir, 'skills');
+  return scanSkillsDir(join(pluginDir, 'skills'));
+}
+
+async function scanStandaloneSkills(sourceDir: string): Promise<Skill[]> {
+  return scanSkillsDir(join(sourceDir, 'skills'));
+}
+
+async function scanSkillsDir(skillsRoot: string): Promise<Skill[]> {
   if (!(await pathExists(skillsRoot))) return [];
   const entries = await fs.readdir(skillsRoot, { withFileTypes: true });
   const skills: Skill[] = [];
@@ -285,6 +295,25 @@ function detectCommandCollisions(
         warnings.push({
           code: 'command-name-collision',
           message: `Command "${cmd.name}" exists as both a standalone command and inside plugin "${plugin.name}".`,
+        });
+      }
+    }
+  }
+  return warnings;
+}
+
+function detectSkillCollisions(
+  plugins: PluginManifest[],
+  standaloneSkills: Skill[],
+): ParseManifestWarning[] {
+  const standaloneNames = new Set(standaloneSkills.map((s) => s.name));
+  const warnings: ParseManifestWarning[] = [];
+  for (const plugin of plugins) {
+    for (const skill of plugin.skills) {
+      if (standaloneNames.has(skill.name)) {
+        warnings.push({
+          code: 'skill-name-collision',
+          message: `Skill "${skill.name}" exists as both a standalone skill and inside plugin "${plugin.name}".`,
         });
       }
     }

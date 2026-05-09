@@ -41,6 +41,7 @@ function buildManifest(overrides: Partial<ResolvedManifest> = {}): ResolvedManif
   return {
     sourceDir: sourceRoot,
     standaloneCommands: [],
+    standaloneSkills: [],
     standaloneAgents: [],
     plugins: [],
     ...overrides,
@@ -265,5 +266,67 @@ describe('computeChangeset', () => {
       lockfile,
     });
     expect(applyResult.installed.sort()).toEqual(cs.added);
+  });
+
+  it('(7) destPaths include standalone and plugin-bundled agents', async () => {
+    const triageSrc = await writeSourceFile('agents/triage.md', 'triage body');
+    const reviewerSrc = await writeSourceFile('plugins/pr/agents/pr-reviewer.md', 'reviewer body');
+
+    const manifest = buildManifest({
+      standaloneAgents: [{ name: 'triage', sourceFile: triageSrc }],
+      plugins: [
+        {
+          name: 'pr',
+          version: '0.1.0',
+          description: 'pr plugin',
+          dir: join(sourceRoot, 'plugins/pr'),
+          commands: [],
+          skills: [],
+          agents: [{ name: 'pr-reviewer', sourceFile: reviewerSrc }],
+        },
+      ],
+    });
+
+    const cs = await computeChangeset({
+      manifest,
+      sourceUrl: 'https://x/agents.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile: emptyLockfile(),
+    });
+
+    expect(cs.added.sort()).toEqual(
+      [
+        join(claudeHome, 'agents/triage.md'),
+        join(claudeHome, 'agents/pr-reviewer.md'),
+      ].sort(),
+    );
+    expect(cs.removed).toEqual([]);
+
+    // Round-trip: applyManifest then compute again — agents should be `unchanged`,
+    // not `removed`. This is the regression case for the bug fixed in this commit.
+    const lockfile: Lockfile = emptyLockfile();
+    await applyManifest({
+      manifest,
+      sourceUrl: 'https://x/agents.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    });
+
+    const cs2 = await computeChangeset({
+      manifest,
+      sourceUrl: 'https://x/agents.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    });
+    expect(cs2.removed).toEqual([]);
+    expect(cs2.unchanged.sort()).toEqual(
+      [
+        join(claudeHome, 'agents/triage.md'),
+        join(claudeHome, 'agents/pr-reviewer.md'),
+      ].sort(),
+    );
   });
 });

@@ -82,6 +82,26 @@ describe('parseManifest', () => {
     expect(conflictResolver.agents).toEqual([]);
   });
 
+  it('discovers standalone skills under the repo-level skills/ directory', async () => {
+    const result = await parseManifest(join(FIXTURES, 'ai-plugins-dev-shape'));
+
+    expect(result.standaloneSkills.map((s) => s.name)).toEqual(['handy-skill']);
+    expect(result.standaloneSkills[0]!.sourceDir).toContain(join('skills', 'handy-skill'));
+    // Standalone skills appear alongside plugin-scoped skills, not instead of them.
+    const prWorkflow = result.plugins.find((p) => p.name === 'ai-pr-workflow')!;
+    expect(prWorkflow.skills.map((s) => s.name)).toEqual(['pr-review']);
+  });
+
+  it('warns (does not throw) when a standalone skill name collides with a plugin-scoped skill', async () => {
+    const result = await parseManifest(join(FIXTURES, 'skill-collision'));
+
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.code).toBe('skill-name-collision');
+    expect(result.warnings[0]!.message).toContain('dup');
+    expect(result.standaloneSkills.map((s) => s.name)).toEqual(['dup']);
+    expect(result.plugins[0]!.skills.map((s) => s.name)).toEqual(['dup']);
+  });
+
   it('warns (does not throw) when a standalone agent name collides with a plugin-scoped agent', async () => {
     const result = await parseManifest(join(FIXTURES, 'agent-collision'));
 

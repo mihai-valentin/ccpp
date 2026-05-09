@@ -122,6 +122,16 @@ export async function cloneOrUpdate(
   return { localPath, sha, ref };
 }
 
+/**
+ * Heuristic — true if `ref` looks like a hex commit SHA (4-40 hex chars).
+ *
+ * Limitation: a branch or tag literally named like a hex string (e.g.
+ * `abc1234`) will be misclassified as a SHA. The clone path then does a full
+ * (non-shallow) clone and a detached-HEAD checkout instead of a branch
+ * checkout. This is rare enough that we accept the cost; users with such
+ * branches should pass `--full-clone` and rely on the named-ref path
+ * (currently exposed as `--ref` only — see git.ts CloneOrUpdateOptions).
+ */
 function looksLikeSha(ref: string): boolean {
   return /^[0-9a-f]{4,40}$/i.test(ref);
 }
@@ -187,6 +197,10 @@ export function runGit(args: string[], opts: RunGitOptions): Promise<RunGitResul
         ...process.env,
         GIT_TERMINAL_PROMPT: '0',
         GIT_ASKPASS: 'echo',
+        // Pin output language so regex parsers (e.g. resolveDefaultBranch's
+        // `set to <branch>` matcher) work regardless of the user's LANG/LC_ALL.
+        LC_ALL: 'C',
+        LANG: 'C',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

@@ -110,6 +110,8 @@ export interface ResolvedManifest {
   plugins: PluginManifest[];
   /** Top-level slash commands not bound to any plugin (from `commands/*.md` at repo root). */
   standaloneCommands: SlashCommand[];
+  /** Top-level skills not bound to any plugin (from `skills/<name>/SKILL.md` at repo root). */
+  standaloneSkills: Skill[];
   /** Top-level subagents not bound to any plugin (from `agents/*.md` at repo root). */
   standaloneAgents: Agent[];
 }

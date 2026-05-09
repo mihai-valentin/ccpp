@@ -223,6 +223,9 @@ async function installSource(params: InstallSourceParams): Promise<InstallSource
   const manifest = await parseManifest(synced.localPath).catch((err: Error) => {
     throw new EnvError(err.message);
   });
+  for (const w of manifest.warnings) {
+    process.stderr.write(`${yellow('!')} ${w.message}\n`);
+  }
 
   const lockfile = await readLockfile(common.lockfilePath).catch((err: Error) => {
     throw new UserError(err.message);

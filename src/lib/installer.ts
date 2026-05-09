@@ -58,6 +58,13 @@ interface PlannedFile {
  * and lockfile entries. Non-destructive on conflict: returns a {@link Conflict}
  * list the caller surfaces to the user. Always backs up an existing file
  * whose bytes differ from what is about to be written.
+ *
+ * Atomicity: this function is **not transactional**. A mid-loop write failure
+ * leaves files already written on disk and the in-memory `lockfile` mutated up
+ * to the failure point — the caller is responsible for deciding whether to
+ * persist the partial lockfile. Recovery uses the `.bak.<timestamp>` files in
+ * `result.backups`: any pre-existing file that would have been overwritten was
+ * renamed (not deleted), so the user can restore it manually.
  */
 export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyManifestResult> {
   const plan = planFiles(opts);
@@ -156,6 +163,9 @@ function planFiles(opts: ApplyManifestOptions): PlannedFile[] {
 
   for (const cmd of opts.manifest.standaloneCommands) {
     pushCommand(items, seenDests, opts, cmd);
+  }
+  for (const skill of opts.manifest.standaloneSkills) {
+    pushSkill(items, seenDests, opts, skill);
   }
   for (const agent of opts.manifest.standaloneAgents) {
     pushAgent(items, seenDests, opts, agent);

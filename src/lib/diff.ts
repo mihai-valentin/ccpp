@@ -1,7 +1,14 @@
 import { promises as fs } from 'node:fs';
 import { join, relative } from 'node:path';
 import { readFileSafe } from './fsutil.js';
-import type { Lockfile, PluginManifest, ResolvedManifest, Skill, SlashCommand } from './types.js';
+import type {
+  Agent,
+  Lockfile,
+  PluginManifest,
+  ResolvedManifest,
+  Skill,
+  SlashCommand,
+} from './types.js';
 
 /**
  * Dry-run diff of what an `applyManifest` invocation would do for a single
@@ -95,6 +102,12 @@ function planFiles(opts: ComputeChangesetOptions): PlannedFile[] {
   for (const cmd of opts.manifest.standaloneCommands) {
     pushCommand(items, seenDests, opts.claudeHome, cmd);
   }
+  for (const skill of opts.manifest.standaloneSkills) {
+    pushSkill(items, seenDests, opts.claudeHome, skill);
+  }
+  for (const agent of opts.manifest.standaloneAgents) {
+    pushAgent(items, seenDests, opts.claudeHome, agent);
+  }
   for (const plugin of opts.manifest.plugins) {
     pushPluginContents(items, seenDests, opts.claudeHome, plugin);
   }
@@ -121,6 +134,19 @@ function pushPluginContents(
 ): void {
   for (const cmd of plugin.commands) pushCommand(items, seenDests, claudeHome, cmd);
   for (const skill of plugin.skills) pushSkill(items, seenDests, claudeHome, skill);
+  for (const agent of plugin.agents) pushAgent(items, seenDests, claudeHome, agent);
+}
+
+function pushAgent(
+  items: PlannedFile[],
+  seenDests: Set<string>,
+  claudeHome: string,
+  agent: Agent,
+): void {
+  const destPath = join(claudeHome, 'agents', `${agent.name}.md`);
+  if (seenDests.has(destPath)) return;
+  seenDests.add(destPath);
+  items.push({ name: agent.name, sourceAbsolute: agent.sourceFile, destPath });
 }
 
 function pushSkill(

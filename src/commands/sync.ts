@@ -199,6 +199,9 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
       );
       throw new EnvError(`${source.url}: ${(err as Error).message}`);
     }
+    for (const w of manifest.warnings) {
+      process.stderr.write(`! ${source.url}: ${w.message}\n`);
+    }
 
     const changeset = await computeChangeset({
       manifest,
