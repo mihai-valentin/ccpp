@@ -1,4 +1,6 @@
 import { promises as fs } from 'node:fs';
+import { writeFileAtomic } from './fsutil.js';
+import { stableStringifyValue } from './json-stable.js';
 
 export const CONFIG_FILENAME = 'ccpp.config.json';
 
@@ -73,7 +75,7 @@ export async function readConfig(path: string): Promise<CcppConfig | null> {
 }
 
 export async function writeConfig(path: string, config: CcppConfig): Promise<void> {
-  await fs.writeFile(path, `${stableStringify(config)}\n`, 'utf8');
+  await writeFileAtomic(path, `${stableStringifyValue(config)}\n`);
 }
 
 function validate(raw: unknown, path: string): CcppConfig {
@@ -453,30 +455,3 @@ function coerceBoolean(key: string, raw: string): boolean {
   );
 }
 
-function stableStringify(value: unknown, indent = 0): string {
-  if (value === null) return 'null';
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return '[]';
-    const nextIndent = indent + 2;
-    const pad = ' '.repeat(nextIndent);
-    const end = ' '.repeat(indent);
-    const items = value.map((v) => `${pad}${stableStringify(v, nextIndent)}`);
-    return `[\n${items.join(',\n')}\n${end}]`;
-  }
-  if (typeof value === 'object') {
-    const keys = Object.keys(value as Record<string, unknown>).sort();
-    if (keys.length === 0) return '{}';
-    const nextIndent = indent + 2;
-    const pad = ' '.repeat(nextIndent);
-    const end = ' '.repeat(indent);
-    const entries = keys.map((k) => {
-      const v = (value as Record<string, unknown>)[k];
-      return `${pad}${JSON.stringify(k)}: ${stableStringify(v, nextIndent)}`;
-    });
-    return `{\n${entries.join(',\n')}\n${end}}`;
-  }
-  return 'null';
-}

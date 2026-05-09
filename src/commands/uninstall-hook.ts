@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { dirname } from 'node:path';
+import { writeFileAtomic } from '../lib/fsutil.js';
 import { dim, green, yellow } from '../lib/term.js';
 import { type HookScope, isCcppBlock, settingsPathFor } from './install-hook.js';
 
@@ -46,8 +46,7 @@ async function readSettings(path: string): Promise<ClaudeSettings | null> {
 }
 
 async function writeSettings(path: string, settings: ClaudeSettings): Promise<void> {
-  await fs.mkdir(dirname(path), { recursive: true });
-  await fs.writeFile(path, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+  await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 export async function runUninstallHook(opts: RunUninstallHookOpts): Promise<UninstallHookResult> {

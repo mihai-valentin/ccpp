@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
+import { writeFileAtomic } from '../lib/fsutil.js';
 import { dim, green } from '../lib/term.js';
 
 class UserError extends Error {
@@ -106,14 +107,14 @@ async function readSettings(path: string): Promise<ClaudeSettings> {
 }
 
 async function writeSettings(path: string, settings: ClaudeSettings): Promise<void> {
-  await fs.mkdir(dirname(path), { recursive: true });
-  await fs.writeFile(path, `${JSON.stringify(settings, null, 2)}\n`, 'utf8');
+  await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 async function writeHookScript(ccppHome: string): Promise<string> {
   await fs.mkdir(ccppHome, { recursive: true });
   const scriptPath = join(ccppHome, 'hook.sh');
-  await fs.writeFile(scriptPath, HOOK_SCRIPT_BODY, { mode: 0o755 });
+  await writeFileAtomic(scriptPath, HOOK_SCRIPT_BODY);
+  await fs.chmod(scriptPath, 0o755);
   return scriptPath;
 }
 

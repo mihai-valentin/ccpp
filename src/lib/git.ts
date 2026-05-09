@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { pathExists } from './fsutil.js';
 
 export interface ParsedRepoUrl {
   host: string;
@@ -165,15 +166,6 @@ async function resolveDefaultBranch(repoDir: string): Promise<string> {
 async function hasRef(repoDir: string, ref: string): Promise<boolean> {
   try {
     await runGit(['rev-parse', '--verify', '--quiet', ref], { cwd: repoDir });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fs.access(path);
     return true;
   } catch {
     return false;

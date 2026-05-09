@@ -1,4 +1,6 @@
 import { promises as fs } from 'node:fs';
+import { writeFileAtomic } from './fsutil.js';
+import { stableStringifyValue } from './json-stable.js';
 import type { Lockfile } from './types.js';
 
 /** Path of `ccpp.lock.json` relative to a working directory. */
@@ -36,10 +38,11 @@ export async function readLockfile(path: string): Promise<Lockfile> {
 /**
  * Serialise a lockfile deterministically and write it to disk. Keys are
  * sorted, indentation is two spaces, and a trailing newline is appended so
- * diffs are stable across runs.
+ * diffs are stable across runs. Writes are atomic (temp + rename) — see
+ * `fsutil.writeFileAtomic`.
  */
 export async function writeLockfile(path: string, lockfile: Lockfile): Promise<void> {
-  await fs.writeFile(path, stableStringify(lockfile), 'utf8');
+  await writeFileAtomic(path, stableStringify(lockfile));
 }
 
 /**
@@ -47,35 +50,7 @@ export async function writeLockfile(path: string, lockfile: Lockfile): Promise<v
  * 2-space indent, trailing newline.
  */
 export function stableStringify(lockfile: Lockfile): string {
-  return `${stableStringifyValue(lockfile, 0)}\n`;
-}
-
-function stableStringifyValue(value: unknown, indent: number): string {
-  if (value === null) return 'null';
-  if (typeof value === 'string') return JSON.stringify(value);
-  if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    if (value.length === 0) return '[]';
-    const nextIndent = indent + 2;
-    const pad = ' '.repeat(nextIndent);
-    const end = ' '.repeat(indent);
-    const items = value.map((v) => `${pad}${stableStringifyValue(v, nextIndent)}`);
-    return `[\n${items.join(',\n')}\n${end}]`;
-  }
-  if (typeof value === 'object') {
-    const keys = Object.keys(value as Record<string, unknown>).sort();
-    if (keys.length === 0) return '{}';
-    const nextIndent = indent + 2;
-    const pad = ' '.repeat(nextIndent);
-    const end = ' '.repeat(indent);
-    const entries = keys.map((k) => {
-      const v = (value as Record<string, unknown>)[k];
-      return `${pad}${JSON.stringify(k)}: ${stableStringifyValue(v, nextIndent)}`;
-    });
-    return `{\n${entries.join(',\n')}\n${end}}`;
-  }
-  // undefined / function / symbol — drop by representing as null (shouldn't happen with Lockfile values).
-  return 'null';
+  return `${stableStringifyValue(lockfile)}\n`;
 }
 
 function validateLockfile(raw: unknown, path: string): Lockfile {

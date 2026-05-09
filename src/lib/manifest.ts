@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
+import { pathExists } from './fsutil.js';
 import type {
   Agent,
   MarketplaceJson,
@@ -338,15 +339,6 @@ function detectAgentCollisions(
     }
   }
   return warnings;
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fs.access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function assertDirectory(path: string): Promise<void> {

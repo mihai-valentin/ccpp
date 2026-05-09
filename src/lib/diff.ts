@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { join, relative } from 'node:path';
-import { readFileSafe } from './fsutil.js';
+import { pathExists, readFileSafe } from './fsutil.js';
 import type {
   Agent,
   Lockfile,
@@ -167,13 +167,4 @@ function pushSkill(
 
 function buffersEqual(a: Buffer, b: Buffer): boolean {
   return a.length === b.length && a.equals(b);
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await fs.access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }

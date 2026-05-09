@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readFileSafe } from './fsutil.js';
+import { pathExists, readFileSafe, writeFileAtomic } from './fsutil.js';
 
 let scratch: string;
 
@@ -47,5 +47,43 @@ describe('readFileSafe', () => {
 
   it('propagates ENOENT for a missing regular file (unchanged from fs.readFile)', async () => {
     await expect(readFileSafe(join(scratch, 'nope.txt'))).rejects.toThrow(/ENOENT|no such file/i);
+  });
+});
+
+describe('writeFileAtomic', () => {
+  it('creates intermediate directories and writes the final file in place', async () => {
+    const target = join(scratch, 'nested', 'dir', 'output.json');
+    await writeFileAtomic(target, '{"hello":1}');
+    expect(await fs.readFile(target, 'utf8')).toBe('{"hello":1}');
+    // The temp file is gone after the rename.
+    const siblings = await fs.readdir(join(scratch, 'nested', 'dir'));
+    expect(siblings).toEqual(['output.json']);
+  });
+
+  it('overwrites an existing target', async () => {
+    const target = join(scratch, 'a.json');
+    await fs.writeFile(target, 'old');
+    await writeFileAtomic(target, 'new');
+    expect(await fs.readFile(target, 'utf8')).toBe('new');
+  });
+
+  it('does not leave a tmp file behind on success', async () => {
+    const target = join(scratch, 'b.json');
+    await writeFileAtomic(target, 'x');
+    const siblings = await fs.readdir(scratch);
+    // Only the target file should remain — no `.tmp.*` leftovers.
+    expect(siblings.filter((n) => n.includes('.tmp.'))).toEqual([]);
+  });
+});
+
+describe('pathExists', () => {
+  it('returns true for an existing file', async () => {
+    const p = join(scratch, 'x');
+    await fs.writeFile(p, '');
+    expect(await pathExists(p)).toBe(true);
+  });
+
+  it('returns false for a missing path', async () => {
+    expect(await pathExists(join(scratch, 'nope'))).toBe(false);
   });
 });
