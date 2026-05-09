@@ -12,7 +12,7 @@ import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
 import { type SyncOutcome, type SyncTrigger, appendSyncLog } from '../lib/log.js';
 import { parseManifest } from '../lib/manifest.js';
-import { dim, green, promptYesNo, yellow } from '../lib/term.js';
+import { dim, formatShortSha, green, promptYesNo, yellow } from '../lib/term.js';
 import type { Conflict } from '../lib/types.js';
 
 export type SyncOverride = SyncPolicy;
@@ -255,8 +255,8 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
       allConflicts.push(...result.conflicts);
 
       if (!opts.quiet && !opts.json) {
-        const priorShort = priorSha ? priorSha.slice(0, 7) : '(new)';
-        const newShort = synced.sha.slice(0, 7);
+        const priorShort = priorSha ? formatShortSha(priorSha) : '(new)';
+        const newShort = formatShortSha(synced.sha);
         const suffix = applyStatus === 'no-changes' ? dim(' (up-to-date)') : '';
         process.stdout.write(
           `${green('✓')} ${source.url}  ${dim(`policy=${policy}`)}  SHA: ${priorShort} -> ${newShort}  (${result.installed.length} added, ${result.updated.length} modified, ${removed.length} removed)${suffix}\n`,

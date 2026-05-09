@@ -296,10 +296,7 @@ describe('computeChangeset', () => {
     });
 
     expect(cs.added.sort()).toEqual(
-      [
-        join(claudeHome, 'agents/triage.md'),
-        join(claudeHome, 'agents/pr-reviewer.md'),
-      ].sort(),
+      [join(claudeHome, 'agents/triage.md'), join(claudeHome, 'agents/pr-reviewer.md')].sort(),
     );
     expect(cs.removed).toEqual([]);
 
@@ -323,10 +320,7 @@ describe('computeChangeset', () => {
     });
     expect(cs2.removed).toEqual([]);
     expect(cs2.unchanged.sort()).toEqual(
-      [
-        join(claudeHome, 'agents/triage.md'),
-        join(claudeHome, 'agents/pr-reviewer.md'),
-      ].sort(),
+      [join(claudeHome, 'agents/triage.md'), join(claudeHome, 'agents/pr-reviewer.md')].sort(),
     );
   });
 });

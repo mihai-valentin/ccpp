@@ -108,7 +108,7 @@ export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyMa
 
     if (destExists) {
       const destBytes = await fs.readFile(item.destPath);
-      if (buffersEqual(sourceBytes, destBytes)) {
+      if (sourceBytes.equals(destBytes)) {
         result.unchanged.push(item.destPath);
         opts.lockfile.installed[item.destPath] = lockEntry(item, opts, now);
         continue;
@@ -260,8 +260,4 @@ function lockEntry(item: PlannedFile, opts: ApplyManifestOptions, now: string): 
 
 function backupStamp(): string {
   return new Date().toISOString().replace(/:/g, '-');
-}
-
-function buffersEqual(a: Buffer, b: Buffer): boolean {
-  return a.length === b.length && a.equals(b);
 }

@@ -14,30 +14,28 @@ import { runStatus } from './commands/status.js';
 import { resolveOverride, runSync } from './commands/sync.js';
 import { runUninstallHook } from './commands/uninstall-hook.js';
 import {
+  CONFIG_FILENAME,
   type CcppConfig,
   type ConfigSource,
   POLICY_LATEST_WARNING,
   applyConfigSet,
-  requiresAcknowledgement,
-} from './lib/config.js';
-import {
-  CONFIG_FILENAME,
   configExists,
   emptyConfig,
   readConfig,
+  requiresAcknowledgement,
   writeConfig,
 } from './lib/config.js';
 import { CollisionError, EXIT, EnvError, UserError } from './lib/errors.js';
 import { cloneOrUpdate, parseRepoUrl } from './lib/git.js';
-import { claudeDirs, classifyDestination } from './lib/layout.js';
 import { applyManifest, removeFromLockfile } from './lib/installer.js';
+import { classifyDestination, claudeDirs } from './lib/layout.js';
 import { LOCKFILE_FILENAME, readLockfile, writeLockfile } from './lib/lockfile.js';
 import { parseManifest } from './lib/manifest.js';
-import { splitUrlRef } from './lib/url.js';
 import {
   bold,
   dim,
   disableColor,
+  formatShortSha,
   formatTable,
   green,
   isInteractive,
@@ -48,6 +46,7 @@ import {
   yellow,
 } from './lib/term.js';
 import type { Conflict, Lockfile } from './lib/types.js';
+import { splitUrlRef } from './lib/url.js';
 
 interface CommonOpts {
   claudeHome?: string;
@@ -593,7 +592,7 @@ async function doList(opts: CommonOpts): Promise<void> {
   const header = [bold('NAME'), bold('TYPE'), bold('SOURCE'), bold('SHA'), bold('LAST_SYNC')];
   const table = [
     header,
-    ...rows.map((r) => [r.name, r.type, r.sourceUrl, r.sha.slice(0, 7), r.lastSync]),
+    ...rows.map((r) => [r.name, r.type, r.sourceUrl, formatShortSha(r.sha), r.lastSync]),
   ];
   for (const line of formatTable(table)) log(line, common);
 }
@@ -774,7 +773,7 @@ function emitInstallSummary(
     return;
   }
   log(
-    `${green('✓')} ${url} ${dim(`@${sha.slice(0, 7)}`)} (${ref}) — ${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged`,
+    `${green('✓')} ${url} ${dim(`@${formatShortSha(sha)}`)} (${ref}) — ${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged`,
     common,
   );
   if (result.backups.length > 0) {
@@ -817,7 +816,10 @@ function emitWizardReport(params: WizardReportParams): void {
 
   log('', common);
   log(bold('Install complete'), common);
-  log(`  ${green('✓')} ${plan.url} ${dim(`@${synced.sha.slice(0, 7)} (${synced.ref})`)}`, common);
+  log(
+    `  ${green('✓')} ${plan.url} ${dim(`@${formatShortSha(synced.sha)} (${synced.ref})`)}`,
+    common,
+  );
   log(
     `    ${commandCount} command(s), ${skillNames.length} skill(s), ${agentCount} agent(s) in ${common.claudeHome}`,
     common,
@@ -877,7 +879,10 @@ async function main(argv: string[]): Promise<void> {
     cli
       .command('init', 'Create a ccpp.config.json in the current directory')
       .option('--source <url>', 'First source URL to record in the config')
-      .option('--ref <ref>', 'Optional ref (branch/tag/commit) for the first source (alternative to --source <url>@<ref> shorthand)')
+      .option(
+        '--ref <ref>',
+        'Optional ref (branch/tag/commit) for the first source (alternative to --source <url>@<ref> shorthand)',
+      )
       .option('--force', 'Overwrite an existing config')
       .action(async (opts: CommonOpts & { source?: string; ref?: string; force?: boolean }) => {
         await doInit(opts);
@@ -890,7 +895,10 @@ async function main(argv: string[]): Promise<void> {
         'install [url]',
         'Clone a source and install it; no <url> → first-time interactive wizard. URL accepts <url>@<ref> shorthand.',
       )
-      .option('--ref <ref>', 'Optional ref (branch/tag/commit) to check out (alternative to <url>@<ref> shorthand)')
+      .option(
+        '--ref <ref>',
+        'Optional ref (branch/tag/commit) to check out (alternative to <url>@<ref> shorthand)',
+      )
       .option('--prefer', 'On collision, prefer this install over existing lockfile entries')
       .option('--prefer-latest', 'Persist policy=latest on this source (future syncs pull newest)')
       .option('--yes', 'Auto-confirm prompts during this install run (ack + collisions)')

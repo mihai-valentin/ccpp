@@ -41,6 +41,13 @@ export interface InstallHookResult {
   action: 'created' | 'updated' | 'chained' | 'replaced';
 }
 
+const ACTION_VERB: Record<InstallHookResult['action'], string> = {
+  created: 'registered',
+  updated: 'updated (already present)',
+  chained: 'appended (chained after existing hook)',
+  replaced: 'replaced existing hook',
+};
+
 /**
  * Body of the hook script. `ccpp install-hook` writes this to
  * `<ccppHome>/hook.sh` and points the Claude Code SessionStart entry at it.
@@ -145,15 +152,7 @@ export async function runInstallHook(opts: RunInstallHookOpts): Promise<InstallH
   if (opts.json) {
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } else if (!opts.quiet) {
-    const verb =
-      action === 'created'
-        ? 'registered'
-        : action === 'updated'
-          ? 'updated (already present)'
-          : action === 'chained'
-            ? 'appended (chained after existing hook)'
-            : 'replaced existing hook';
-    process.stdout.write(`${green('✓')} ${verb}\n`);
+    process.stdout.write(`${green('✓')} ${ACTION_VERB[action]}\n`);
     process.stdout.write(`  ${dim('settings:')} ${settingsPath}\n`);
     process.stdout.write(`  ${dim('script:  ')} ${scriptPath}\n`);
   }

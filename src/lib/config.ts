@@ -2,6 +2,13 @@ import { promises as fs } from 'node:fs';
 import { writeFileAtomic } from './fsutil.js';
 import { stableStringifyValue } from './json-stable.js';
 
+function isIsoTimestamp(s: string): boolean {
+  // Date.parse returns NaN for unparseable input. Round-trip check ensures the
+  // string was a real ISO-8601 timestamp, not a numeric/loose date string.
+  const parsed = Date.parse(s);
+  return !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 10) === s.slice(0, 10);
+}
+
 export const CONFIG_FILENAME = 'ccpp.config.json';
 
 export type SyncPolicy = 'pinned' | 'latest';
@@ -153,12 +160,20 @@ function validate(raw: unknown, path: string): CcppConfig {
     throw new Error(`Invalid config ${path}: "autoAccept" must be a boolean if set.`);
   }
   const policyAcknowledgedAt = obj.policyAcknowledgedAt;
-  if (policyAcknowledgedAt !== undefined && typeof policyAcknowledgedAt !== 'string') {
-    throw new Error(`Invalid config ${path}: "policyAcknowledgedAt" must be a string if set.`);
+  if (policyAcknowledgedAt !== undefined) {
+    if (typeof policyAcknowledgedAt !== 'string' || !isIsoTimestamp(policyAcknowledgedAt)) {
+      throw new Error(
+        `Invalid config ${path}: "policyAcknowledgedAt" must be an ISO-8601 timestamp if set.`,
+      );
+    }
   }
   const autoAcceptAcknowledgedAt = obj.autoAcceptAcknowledgedAt;
-  if (autoAcceptAcknowledgedAt !== undefined && typeof autoAcceptAcknowledgedAt !== 'string') {
-    throw new Error(`Invalid config ${path}: "autoAcceptAcknowledgedAt" must be a string if set.`);
+  if (autoAcceptAcknowledgedAt !== undefined) {
+    if (typeof autoAcceptAcknowledgedAt !== 'string' || !isIsoTimestamp(autoAcceptAcknowledgedAt)) {
+      throw new Error(
+        `Invalid config ${path}: "autoAcceptAcknowledgedAt" must be an ISO-8601 timestamp if set.`,
+      );
+    }
   }
 
   const config: CcppConfig = { version: 1, sources: normalisedSources, scope: 'user' };
@@ -189,6 +204,12 @@ const KNOWN_TOP_LEVEL_KEYS = [
   'policyAcknowledgedAt',
   'autoAcceptAcknowledgedAt',
 ] as const;
+
+function parseKeyOrThrow(key: string): ParsedKey {
+  const parsed = parseKey(key);
+  if (!parsed) throw unknownKeyError(key);
+  return parsed;
+}
 
 function parseKey(key: string): ParsedKey | null {
   switch (key) {
@@ -221,8 +242,7 @@ function unknownKeyError(key: string): Error {
  * undefined when unset (no default). Throws on unknown keys.
  */
 export function getConfigValue(config: CcppConfig, key: string): unknown {
-  const parsed = parseKey(key);
-  if (!parsed) throw unknownKeyError(key);
+  const parsed = parseKeyOrThrow(key);
   switch (parsed.kind) {
     case 'syncPolicy':
       return config.syncPolicy ?? CONFIG_DEFAULTS.syncPolicy;
@@ -250,8 +270,7 @@ export function getConfigValue(config: CcppConfig, key: string): unknown {
  * Throws on unknown keys or invalid values.
  */
 export function setConfigValue(config: CcppConfig, key: string, rawValue: string): void {
-  const parsed = parseKey(key);
-  if (!parsed) throw unknownKeyError(key);
+  const parsed = parseKeyOrThrow(key);
   switch (parsed.kind) {
     case 'syncPolicy': {
       config.syncPolicy = coerceSyncPolicy(key, rawValue);
@@ -374,8 +393,7 @@ export function resetConfigValue(config: CcppConfig, key?: string): void {
     for (const src of config.sources) src.policy = undefined;
     return;
   }
-  const parsed = parseKey(key);
-  if (!parsed) throw unknownKeyError(key);
+  const parsed = parseKeyOrThrow(key);
   switch (parsed.kind) {
     case 'syncPolicy':
       config.syncPolicy = undefined;
@@ -454,4 +472,3 @@ function coerceBoolean(key: string, raw: string): boolean {
     `Invalid value for "${key}": expected "true" or "false", got ${JSON.stringify(raw)}.`,
   );
 }
-

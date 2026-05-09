@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { splitUrlRef } from './url.js';
 
 describe('splitUrlRef', () => {
+  it('keeps an `@` at position 0 (no preceding path) intact', () => {
+    // `@feature` has lastAt=0 < pathStart=-1 — but Math.max(-1,-1) = -1 so
+    // the condition `lastAt < pathStart` is false. We still expect no split
+    // because there's no actual URL before the @.
+    expect(splitUrlRef('@feature')).toEqual({ url: '@feature' });
+  });
+
   it('returns the input unchanged when no @ is present', () => {
     expect(splitUrlRef('https://github.com/u/r')).toEqual({ url: 'https://github.com/u/r' });
     expect(splitUrlRef('https://github.com/u/r.git')).toEqual({

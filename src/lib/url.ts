@@ -17,6 +17,7 @@ export function splitUrlRef(input: string): { url: string; ref?: string } {
   const pathStart = Math.max(lastSlash, lastColon);
 
   if (lastAt < pathStart) return { url: input };
+  if (lastAt === 0) return { url: input };
 
   const ref = input.slice(lastAt + 1);
   if (ref.length === 0) return { url: input };

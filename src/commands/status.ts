@@ -8,7 +8,7 @@ import {
 import { UserError } from '../lib/errors.js';
 import { readLockfile } from '../lib/lockfile.js';
 import { type SyncLogEntry, defaultLogPath, readSyncLog } from '../lib/log.js';
-import { bold, dim, formatTable, green, red, yellow } from '../lib/term.js';
+import { bold, dim, formatShortSha, formatTable, green, red, yellow } from '../lib/term.js';
 import type { Lockfile } from '../lib/types.js';
 
 export interface RunStatusOpts {
@@ -120,7 +120,7 @@ function emitHuman(report: StatusReport): void {
         s.url,
         s.policy,
         s.lastSync ?? dim('—'),
-        s.sha ? s.sha.slice(0, 7) : dim('—'),
+        s.sha ? formatShortSha(s.sha) : dim('—'),
         renderStatus(s),
       ]);
     }
@@ -156,4 +156,3 @@ function renderStatus(row: StatusRow): string {
           : dim('never-synced');
   return row.detail ? `${base} ${dim(`(${row.detail})`)}` : base;
 }
-

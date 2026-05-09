@@ -30,8 +30,8 @@ export interface ResolvedSource extends Source {
  * skills and slash commands from, plus install preferences.
  */
 export interface Manifest {
-  /** Manifest schema version — used for forward-compat migrations. */
-  version: number;
+  /** Manifest schema version. Bump when introducing breaking shape changes. */
+  version: 1;
   /** Named sources keyed by short alias. */
   sources: Record<string, Source>;
   /** Optional list of plugin short names to enable. */

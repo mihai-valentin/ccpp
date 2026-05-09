@@ -69,7 +69,7 @@ export async function computeChangeset(opts: ComputeChangesetOptions): Promise<C
       readFileSafe(item.sourceAbsolute),
       fs.readFile(item.destPath),
     ]);
-    if (buffersEqual(sourceBytes, destBytes)) {
+    if (sourceBytes.equals(destBytes)) {
       changeset.unchanged.push(item.destPath);
     } else {
       changeset.modified.push(item.destPath);
@@ -164,8 +164,4 @@ function pushSkill(
     seenDests.add(destPath);
     items.push({ name: skill.name, sourceAbsolute: file, destPath });
   }
-}
-
-function buffersEqual(a: Buffer, b: Buffer): boolean {
-  return a.length === b.length && a.equals(b);
 }

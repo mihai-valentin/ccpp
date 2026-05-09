@@ -278,10 +278,10 @@ describe('exit codes', () => {
       const claudeHome = join(scratch, 'claude');
       const cacheRoot = join(scratch, 'cache');
 
-      const { code } = await cli(
-        ['install', `${fx.url}@${sha1}`, '--claude-home', claudeHome],
-        { cwd: scratch, env: { CCPP_CACHE: cacheRoot } },
-      );
+      const { code } = await cli(['install', `${fx.url}@${sha1}`, '--claude-home', claudeHome], {
+        cwd: scratch,
+        env: { CCPP_CACHE: cacheRoot },
+      });
       expect(code).toBe(0);
 
       // The installed file content reflects the pinned SHA, not the HEAD SHA.

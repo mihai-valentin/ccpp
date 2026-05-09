@@ -205,7 +205,7 @@ export function runGit(args: string[], opts: RunGitOptions): Promise<RunGitResul
       stderr += chunk.toString('utf8');
     });
     child.on('error', (err) => {
-      reject(new Error(`Failed to spawn git: ${err.message}`));
+      reject(new Error(`Failed to spawn git: ${err.message}`, { cause: err }));
     });
     child.on('close', (code) => {
       if (code === 0) {

@@ -22,6 +22,18 @@ export function disableColor(): void {
   process.env.CCPP_NO_COLOR = '1';
 }
 
+/**
+ * Standard short-SHA length used in git tooling and ccpp's user-facing output.
+ * Centralized so every place that abbreviates a commit SHA shows the same
+ * number of characters.
+ */
+export const SHORT_SHA_LEN = 7;
+
+/** Truncate a commit SHA to the conventional short form for display. */
+export function formatShortSha(sha: string): string {
+  return sha.slice(0, SHORT_SHA_LEN);
+}
+
 /** Strip ANSI escape sequences (SGR colors only — not full ECMA-48). */
 export function stripColor(s: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: SGR escape stripping — \x1b is load-bearing.
