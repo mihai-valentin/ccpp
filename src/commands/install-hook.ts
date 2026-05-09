@@ -1,12 +1,20 @@
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import {
+  type ClaudeSettings,
+  type SessionStartBlock,
+  isCcppBlock,
+  readSettings,
+  writeSettings,
+} from '../lib/claudeSettings.js';
+import { UserError } from '../lib/errors.js';
 import { writeFileAtomic } from '../lib/fsutil.js';
 import { dim, green } from '../lib/term.js';
 
-class UserError extends Error {
-  readonly exitCode = 1;
-}
+// Re-exports kept for backward compatibility with any callers still importing
+// these names from install-hook.ts (e.g. uninstall-hook before the refactor).
+export { isCcppBlock };
 
 export type HookScope = 'user' | 'project';
 
@@ -31,24 +39,6 @@ export interface InstallHookResult {
   settingsPath: string;
   scriptPath: string;
   action: 'created' | 'updated' | 'chained' | 'replaced';
-}
-
-interface HookCommand {
-  type: 'command';
-  command: string;
-}
-
-interface SessionStartBlock {
-  matcher?: string;
-  hooks: HookCommand[];
-}
-
-interface ClaudeSettings {
-  hooks?: {
-    SessionStart?: SessionStartBlock[];
-    [k: string]: unknown;
-  };
-  [k: string]: unknown;
 }
 
 /**
@@ -92,24 +82,6 @@ export function settingsPathFor(opts: RunInstallHookOpts): string {
   return join(home, 'settings.json');
 }
 
-export function isCcppBlock(block: SessionStartBlock): boolean {
-  return block.hooks.some((h) => h.type === 'command' && /\bccpp\b/.test(h.command));
-}
-
-async function readSettings(path: string): Promise<ClaudeSettings> {
-  try {
-    const text = await fs.readFile(path, 'utf8');
-    return JSON.parse(text) as ClaudeSettings;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
-    throw new Error(`Failed to read ${path}: ${(err as Error).message}`);
-  }
-}
-
-async function writeSettings(path: string, settings: ClaudeSettings): Promise<void> {
-  await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
-}
-
 async function writeHookScript(ccppHome: string): Promise<string> {
   await fs.mkdir(ccppHome, { recursive: true });
   const scriptPath = join(ccppHome, 'hook.sh');
@@ -137,7 +109,7 @@ export async function runInstallHook(opts: RunInstallHookOpts): Promise<InstallH
   }
 
   const settingsPath = settingsPathFor(opts);
-  const settings = await readSettings(settingsPath);
+  const settings: ClaudeSettings = (await readSettings(settingsPath)) ?? {};
   const ccppHome = opts.ccppHome ?? defaultCcppHome();
   const scriptPath = await writeHookScript(ccppHome);
   const ccppBlock = makeCcppBlock(scriptPath);

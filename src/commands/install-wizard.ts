@@ -1,5 +1,6 @@
 import { AUTO_ACCEPT_WARNING, POLICY_LATEST_WARNING, type SyncPolicy } from '../lib/config.js';
 import { parseRepoUrl } from '../lib/git.js';
+import { classifyDestination } from '../lib/layout.js';
 import { bold, dim, yellow } from '../lib/term.js';
 
 /**
@@ -153,26 +154,16 @@ export function summarizeInstalledTargets(
   result: { installed: string[]; updated: string[]; unchanged: string[] },
   claudeHome: string,
 ): { commandCount: number; skillNames: string[]; agentCount: number } {
-  const commandsPrefix = `${claudeHome}/commands/`;
-  const skillsPrefix = `${claudeHome}/skills/`;
-  const agentsPrefix = `${claudeHome}/agents/`;
   const all = [...result.installed, ...result.updated, ...result.unchanged];
   let commandCount = 0;
   let agentCount = 0;
   const skills = new Set<string>();
   for (const p of all) {
-    if (p.startsWith(commandsPrefix)) {
-      commandCount++;
-      continue;
-    }
-    if (p.startsWith(agentsPrefix)) {
-      agentCount++;
-      continue;
-    }
-    if (p.startsWith(skillsPrefix)) {
-      const name = p.slice(skillsPrefix.length).split(/[\\/]/)[0];
-      if (name) skills.add(name);
-    }
+    const cls = classifyDestination(p, claudeHome);
+    if (!cls) continue;
+    if (cls.kind === 'commands') commandCount++;
+    else if (cls.kind === 'agents') agentCount++;
+    else if (cls.kind === 'skills' && cls.name.length > 0) skills.add(cls.name);
   }
   return { commandCount, skillNames: [...skills].sort(), agentCount };
 }

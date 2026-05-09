@@ -27,7 +27,9 @@ import {
   readConfig,
   writeConfig,
 } from './lib/config.js';
+import { CollisionError, EXIT, EnvError, UserError } from './lib/errors.js';
 import { cloneOrUpdate, parseRepoUrl } from './lib/git.js';
+import { claudeDirs, classifyDestination } from './lib/layout.js';
 import { applyManifest, removeFromLockfile } from './lib/installer.js';
 import { LOCKFILE_FILENAME, readLockfile, writeLockfile } from './lib/lockfile.js';
 import { parseManifest } from './lib/manifest.js';
@@ -44,24 +46,6 @@ import {
   yellow,
 } from './lib/term.js';
 import type { Conflict, Lockfile } from './lib/types.js';
-
-/** Exit codes — also documented in `ccpp --help` epilog and docs/exit-codes.md. */
-const EXIT = { OK: 0, USER: 1, ENV: 2, COLLISION: 3 } as const;
-
-class UserError extends Error {
-  readonly exitCode = EXIT.USER;
-}
-class EnvError extends Error {
-  readonly exitCode = EXIT.ENV;
-}
-class CollisionError extends Error {
-  readonly exitCode = EXIT.COLLISION;
-  readonly conflicts: Conflict[];
-  constructor(message: string, conflicts: Conflict[]) {
-    super(message);
-    this.conflicts = conflicts;
-  }
-}
 
 interface CommonOpts {
   claudeHome?: string;
@@ -728,44 +712,40 @@ interface ListRow {
 
 function lockfileRows(lockfile: Lockfile, claudeHome: string): ListRow[] {
   const rows: ListRow[] = [];
-  const commandsDir = join(claudeHome, 'commands');
-  const skillsDir = join(claudeHome, 'skills');
-  const agentsDir = join(claudeHome, 'agents');
+  const dirs = claudeDirs(claudeHome);
   const seenSkills = new Set<string>();
   for (const [destPath, entry] of Object.entries(lockfile.installed)) {
-    if (destPath.startsWith(`${commandsDir}`) && destPath.endsWith('.md')) {
-      const name = destPath.slice(commandsDir.length + 1, -'.md'.length);
+    const cls = classifyDestination(destPath, claudeHome);
+    if (!cls) continue;
+    if (cls.kind === 'commands') {
       rows.push({
-        name,
+        name: cls.name,
         type: 'command',
         sourceUrl: entry.sourceUrl,
         sha: entry.sourceSha,
         lastSync: entry.installedAt,
         destPath,
       });
-    } else if (destPath.startsWith(`${agentsDir}`) && destPath.endsWith('.md')) {
-      const name = destPath.slice(agentsDir.length + 1, -'.md'.length);
+    } else if (cls.kind === 'agents') {
       rows.push({
-        name,
+        name: cls.name,
         type: 'agent',
         sourceUrl: entry.sourceUrl,
         sha: entry.sourceSha,
         lastSync: entry.installedAt,
         destPath,
       });
-    } else if (destPath.startsWith(`${skillsDir}`)) {
-      const rest = destPath.slice(skillsDir.length + 1);
-      const skillName = rest.split(/[\\/]/)[0]!;
-      const key = `${entry.sourceUrl}::${skillName}`;
+    } else if (cls.kind === 'skills' && cls.name.length > 0) {
+      const key = `${entry.sourceUrl}::${cls.name}`;
       if (seenSkills.has(key)) continue;
       seenSkills.add(key);
       rows.push({
-        name: skillName,
+        name: cls.name,
         type: 'skill',
         sourceUrl: entry.sourceUrl,
         sha: entry.sourceSha,
         lastSync: entry.installedAt,
-        destPath: join(skillsDir, skillName),
+        destPath: join(dirs.skillsDir, cls.name),
       });
     }
   }
@@ -891,10 +871,8 @@ function stripColor(s: string): string {
 function classifyAndExit(err: unknown): never {
   let code: number = EXIT.ENV;
   let message: string;
-  if (err instanceof Error && typeof (err as { exitCode?: unknown }).exitCode === 'number') {
-    // Duck-typed: recognizes error classes defined in sub-modules (e.g. commands/sync.ts)
-    // without requiring a shared base class across module boundaries.
-    code = (err as unknown as { exitCode: number }).exitCode;
+  if (err instanceof UserError || err instanceof EnvError || err instanceof CollisionError) {
+    code = err.exitCode;
     message = err.message;
   } else if (err instanceof Error) {
     message = err.message;

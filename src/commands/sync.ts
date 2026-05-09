@@ -6,6 +6,7 @@ import {
   readConfig,
 } from '../lib/config.js';
 import { type Changeset, computeChangeset, hasChanges } from '../lib/diff.js';
+import { CollisionError, EnvError, UserError } from '../lib/errors.js';
 import { cloneOrUpdate } from '../lib/git.js';
 import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
@@ -13,22 +14,6 @@ import { type SyncOutcome, type SyncTrigger, appendSyncLog } from '../lib/log.js
 import { parseManifest } from '../lib/manifest.js';
 import { dim, green, promptYesNo, yellow } from '../lib/term.js';
 import type { Conflict } from '../lib/types.js';
-
-// Private error classes — the cli.ts classifier reads `.exitCode` by duck-typing.
-class UserError extends Error {
-  readonly exitCode = 1;
-}
-class EnvError extends Error {
-  readonly exitCode = 2;
-}
-class CollisionError extends Error {
-  readonly exitCode = 3;
-  readonly conflicts: Conflict[];
-  constructor(message: string, conflicts: Conflict[]) {
-    super(message);
-    this.conflicts = conflicts;
-  }
-}
 
 export type SyncOverride = SyncPolicy;
 

@@ -1,7 +1,6 @@
-import { promises as fs } from 'node:fs';
-import { writeFileAtomic } from '../lib/fsutil.js';
+import { isCcppBlock, readSettings, writeSettings } from '../lib/claudeSettings.js';
 import { dim, green, yellow } from '../lib/term.js';
-import { type HookScope, isCcppBlock, settingsPathFor } from './install-hook.js';
+import { type HookScope, settingsPathFor } from './install-hook.js';
 
 export interface RunUninstallHookOpts {
   scope: HookScope;
@@ -16,37 +15,6 @@ export interface UninstallHookResult {
   removed: boolean;
   /** True if the settings file had no ccpp block to begin with (already clean). */
   noop: boolean;
-}
-
-interface HookCommand {
-  type: 'command';
-  command: string;
-}
-
-interface SessionStartBlock {
-  matcher?: string;
-  hooks: HookCommand[];
-}
-
-interface ClaudeSettings {
-  hooks?: {
-    SessionStart?: SessionStartBlock[];
-    [k: string]: unknown;
-  };
-  [k: string]: unknown;
-}
-
-async function readSettings(path: string): Promise<ClaudeSettings | null> {
-  try {
-    return JSON.parse(await fs.readFile(path, 'utf8')) as ClaudeSettings;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw new Error(`Failed to read ${path}: ${(err as Error).message}`);
-  }
-}
-
-async function writeSettings(path: string, settings: ClaudeSettings): Promise<void> {
-  await writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 export async function runUninstallHook(opts: RunUninstallHookOpts): Promise<UninstallHookResult> {

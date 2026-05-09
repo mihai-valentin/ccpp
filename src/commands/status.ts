@@ -5,14 +5,11 @@ import {
   type SyncPolicy,
   readConfig,
 } from '../lib/config.js';
+import { UserError } from '../lib/errors.js';
 import { readLockfile } from '../lib/lockfile.js';
 import { type SyncLogEntry, defaultLogPath, readSyncLog } from '../lib/log.js';
 import { bold, dim, green, red, yellow } from '../lib/term.js';
 import type { Lockfile } from '../lib/types.js';
-
-class UserError extends Error {
-  readonly exitCode = 1;
-}
 
 export interface RunStatusOpts {
   configPath: string;

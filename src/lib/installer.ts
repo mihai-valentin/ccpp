@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { pathExists, readFileSafe } from './fsutil.js';
+import { CLAUDE_LAYOUT } from './layout.js';
 import type {
   Agent,
   Conflict,
@@ -182,7 +183,7 @@ function pushCommand(
   opts: ApplyManifestOptions,
   cmd: SlashCommand,
 ): void {
-  const destPath = join(opts.claudeHome, 'commands', `${cmd.name}.md`);
+  const destPath = join(opts.claudeHome, CLAUDE_LAYOUT.commands, `${cmd.name}.md`);
   if (seenDests.has(destPath)) return;
   seenDests.add(destPath);
   items.push({
@@ -216,7 +217,7 @@ function pushAgent(
   opts: ApplyManifestOptions,
   agent: Agent,
 ): void {
-  const destPath = join(opts.claudeHome, 'agents', `${agent.name}.md`);
+  const destPath = join(opts.claudeHome, CLAUDE_LAYOUT.agents, `${agent.name}.md`);
   if (seenDests.has(destPath)) return;
   seenDests.add(destPath);
   items.push({
@@ -233,7 +234,7 @@ function pushSkill(
   opts: ApplyManifestOptions,
   skill: Skill,
 ): void {
-  const destRoot = join(opts.claudeHome, 'skills', skill.name);
+  const destRoot = join(opts.claudeHome, CLAUDE_LAYOUT.skills, skill.name);
   for (const file of skill.files) {
     const rel = relative(skill.sourceDir, file);
     const destPath = join(destRoot, rel);
