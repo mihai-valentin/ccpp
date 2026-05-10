@@ -204,10 +204,7 @@ async function preparePlan(
  * (cheap and atomic). On any failure during this phase, the staging tree
  * is rm -rf'd and the error is re-thrown — `~/.claude/` is left untouched.
  */
-async function stagePlan(
-  toWrite: ToWriteItem[],
-  claudeHome: string,
-): Promise<StagedPlan> {
+async function stagePlan(toWrite: ToWriteItem[], claudeHome: string): Promise<StagedPlan> {
   const stagingId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const stagingRoot = join(claudeHome, `.ccpp-staging-${stagingId}`);
   const items: StagedItem[] = [];
@@ -269,11 +266,7 @@ async function commitStaged(
   return out;
 }
 
-function lockEntry(
-  item: PlannedFile,
-  opts: ApplyManifestOptions,
-  now: string,
-): LockInstalledEntry {
+function lockEntry(item: PlannedFile, opts: ApplyManifestOptions, now: string): LockInstalledEntry {
   return {
     sourceUrl: opts.sourceUrl,
     sourcePath: item.sourceRelative,

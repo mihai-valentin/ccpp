@@ -25,9 +25,7 @@ describe('planFiles', () => {
   it('routes standalone commands to <claudeHome>/commands/<name>.md', () => {
     const out = planFiles(
       manifest({
-        standaloneCommands: [
-          { name: 'hello', sourceFile: join(SOURCE_ROOT, 'commands/hello.md') },
-        ],
+        standaloneCommands: [{ name: 'hello', sourceFile: join(SOURCE_ROOT, 'commands/hello.md') }],
       }),
       CLAUDE_HOME,
     );
@@ -64,9 +62,7 @@ describe('planFiles', () => {
   it('routes standalone agents to <claudeHome>/agents/<name>.md', () => {
     const out = planFiles(
       manifest({
-        standaloneAgents: [
-          { name: 'triage', sourceFile: join(SOURCE_ROOT, 'agents/triage.md') },
-        ],
+        standaloneAgents: [{ name: 'triage', sourceFile: join(SOURCE_ROOT, 'agents/triage.md') }],
       }),
       CLAUDE_HOME,
     );

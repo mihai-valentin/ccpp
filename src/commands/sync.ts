@@ -12,6 +12,7 @@ import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
 import { type SyncOutcome, type SyncTrigger, appendSyncLog } from '../lib/log.js';
 import { type ParseManifestResult, parseManifest } from '../lib/manifest.js';
+import { effectiveAutoAccept, effectivePolicy } from '../lib/policy.js';
 import { dim, formatShortSha, green, promptYesNo, yellow } from '../lib/term.js';
 import type { Conflict, Lockfile } from '../lib/types.js';
 
@@ -92,17 +93,6 @@ export function resolveOverride(flags: SyncOverrideFlags): SyncOverride | undefi
   return undefined;
 }
 
-export function effectivePolicy(
-  source: ConfigSource,
-  config: CcppConfig,
-  override: SyncOverride | undefined,
-): SyncPolicy {
-  if (override !== undefined) return override;
-  if (source.policy !== undefined) return source.policy;
-  if (config.syncPolicy !== undefined) return config.syncPolicy;
-  return 'pinned';
-}
-
 /**
  * Policy-aware sync with a diff-preview trust gate.
  *
@@ -143,7 +133,7 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
     config,
     lockfile,
     trigger: opts.trigger ?? 'manual',
-    autoAcceptEffective: opts.autoAccept === true || config.autoAccept === true,
+    autoAcceptEffective: effectiveAutoAccept(opts.autoAccept, config),
     isTTY: opts.isTTY ?? Boolean(process.stdin.isTTY),
   };
 
@@ -187,10 +177,7 @@ interface SyncContext {
  * Returns the per-source report; collisions are also surfaced via
  * `report.conflicts` so the caller can aggregate them after the loop.
  */
-async function syncOneSource(
-  source: ConfigSource,
-  ctx: SyncContext,
-): Promise<SourceSyncReport> {
+async function syncOneSource(source: ConfigSource, ctx: SyncContext): Promise<SourceSyncReport> {
   const policy = effectivePolicy(source, ctx.config, ctx.opts.override);
   const priorSha = ctx.lockfile.sources[source.url]?.sha ?? null;
 
@@ -217,7 +204,16 @@ async function syncOneSource(
   });
 
   if (applyStatus === 'applied' || applyStatus === 'no-changes') {
-    return await applySource(source, ctx, synced, manifest, changeset, applyStatus, priorSha, policy);
+    return await applySource(
+      source,
+      ctx,
+      synced,
+      manifest,
+      changeset,
+      applyStatus,
+      priorSha,
+      policy,
+    );
   }
   return await recordSkip(source, ctx, synced, changeset, applyStatus, priorSha, policy);
 }

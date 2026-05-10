@@ -1,12 +1,6 @@
 import { join, relative } from 'node:path';
 import { CLAUDE_LAYOUT } from './layout.js';
-import type {
-  Agent,
-  PluginManifest,
-  ResolvedManifest,
-  Skill,
-  SlashCommand,
-} from './types.js';
+import type { Agent, PluginManifest, ResolvedManifest, Skill, SlashCommand } from './types.js';
 
 /**
  * One plan-time entry — a single source file that should land at a single
@@ -80,12 +74,7 @@ function pushCommand(
   });
 }
 
-function pushAgent(
-  items: PlannedFile[],
-  seenDests: Set<string>,
-  ctx: PlanCtx,
-  agent: Agent,
-): void {
+function pushAgent(items: PlannedFile[], seenDests: Set<string>, ctx: PlanCtx, agent: Agent): void {
   const destPath = join(ctx.claudeHome, CLAUDE_LAYOUT.agents, `${agent.name}.md`);
   if (seenDests.has(destPath)) return;
   seenDests.add(destPath);
@@ -97,12 +86,7 @@ function pushAgent(
   });
 }
 
-function pushSkill(
-  items: PlannedFile[],
-  seenDests: Set<string>,
-  ctx: PlanCtx,
-  skill: Skill,
-): void {
+function pushSkill(items: PlannedFile[], seenDests: Set<string>, ctx: PlanCtx, skill: Skill): void {
   const destRoot = join(ctx.claudeHome, CLAUDE_LAYOUT.skills, skill.name);
   for (const file of skill.files) {
     const rel = relative(skill.sourceDir, file);
