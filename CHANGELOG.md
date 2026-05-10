@@ -4,13 +4,49 @@ All notable changes to this project will be documented in this file.
 
 ## [0.2.2] - 2026-05-10
 
-- Fix: **`ccpp install <url>` and `ccpp init` now default to user-scoped config at `~/.ccpp/ccpp.config.json`** (override with `$CCPP_HOME`). Previously the config defaulted to the cwd, which broke the SessionStart auto-update flow — the hook runs from whatever directory Claude Code launches with, so a config landed in `~/projects/A` was invisible if the user opened Claude Code from `~/projects/B`. The hook silently exited 0 (stderr piped to a log) so the failure was invisible.
-- Fix: **`ccpp install <url>` always writes a config** (unless `--scratch`). The previous behavior wrote only the lockfile when no config existed, leaving the user in a state where the next `ccpp sync` errored with "No ccpp.config.json".
-- Feature: read precedence is `--config <path>` > `--project` flag > `./ccpp.config.json` (if it exists) > `~/.ccpp/ccpp.config.json`. The lockfile is co-located with the config (`ccpp.lock.json` in the same dir) unless `--lockfile <path>` overrides.
-- Feature: new `--project` flag forces project-scoped writes. Use it when committing `ccpp.config.json` to a repo for team-share setups.
-- Fix: **commit-SHA refs are classified via `git ls-remote`, not a hex-shape heuristic.** A branch literally named like a SHA (e.g. `abc1234`) used to silently misroute through the SHA path: detached-HEAD checkout, no `reset --hard origin/<ref>` on subsequent syncs — so upstream branch tip moves never landed. Now `git ls-remote --exit-code <url> refs/heads/<ref> refs/tags/<ref>` is authoritative; auth/network failures re-throw with a clear diagnostic instead of silently routing to the SHA path.
-- Fix: **`applyManifest` is now transactional via a two-phase staging tree.** Phase 1 reads source bytes, classifies each plan item, and stages everything to write under `<claudeHome>/.ccpp-staging-<id>/`. Phase 2 atomic-renames each staged file into place (with a `.bak.<ts>` of any pre-existing differing target). A phase-1 failure removes the staging tree and leaves `~/.claude/` untouched. Replaces the previous in-place-write loop that left half-applied state on mid-loop failure.
-- Tests: 215/215 → 222/222 (+7). Two regression tests pin the cwd-fallback (sync from a different cwd) and the auto-config-creation behavior. Two more pin the SHA vs hex-named-branch classification. Two more pin the `applyManifest` rollback semantics.
+The OSS-readiness release. Closes every high-severity finding from the v0.2.1 internal code review and lands a substantial architectural cleanup. No breaking changes for existing repos with `./ccpp.config.json` checked in.
+
+### Bug fixes
+
+- **`ccpp install <url>` and `ccpp init` now default to user-scoped config at `~/.ccpp/ccpp.config.json`** (override with `$CCPP_HOME`). Previously the config defaulted to the cwd, which broke the SessionStart auto-update flow — the hook runs from whatever directory Claude Code launches with, so a config landed in `~/projects/A` was invisible if the user opened Claude Code from `~/projects/B`. The hook silently exited 0 (stderr piped to a log) so the failure was invisible.
+- **`ccpp install <url>` always writes a config** (unless `--scratch`). The previous behavior wrote only the lockfile when no config existed, leaving the user in a state where the next `ccpp sync` errored with `No ccpp.config.json`.
+- **Commit-SHA refs are now classified via `git ls-remote`, not a hex-shape heuristic.** A branch literally named like a SHA (e.g. `abc1234`) used to silently misroute through the SHA path: detached-HEAD checkout, no `reset --hard origin/<ref>` on subsequent syncs — so upstream branch tip moves never landed. Now `git ls-remote --exit-code <url> refs/heads/<ref> refs/tags/<ref>` is authoritative; auth/network failures re-throw with a clear diagnostic instead of silently routing to the SHA path.
+- **`applyManifest` is now transactional via a two-phase staging tree.** Phase 1 reads source bytes, classifies each plan item, and stages everything to write under `<claudeHome>/.ccpp-staging-<id>/`. Phase 2 atomic-renames each staged file into place (with a `.bak.<ts>` of any pre-existing differing target). A phase-1 failure removes the staging tree and leaves `~/.claude/` untouched. Replaces the previous in-place-write loop that left half-applied state on mid-loop failure.
+- **`diff.ts` now handles agents.** The dry-run summary used to misreport plugin and standalone agents as `removed` because the planner duplicate in `diff.ts` was never updated for the v0.2.0 agents feature. The shared planner (see Architecture) eliminates the drift class entirely.
+- **Standalone `skills/` at the repo root is now discovered.** The parser had `scanStandaloneCommands` and `scanStandaloneAgents` but no `scanStandaloneSkills`; top-level skills directories were silently ignored. Symmetric scanner + collision warning added.
+- **Manifest warnings are surfaced.** Cross-plugin name collisions (commands, skills, agents) now print to stderr during `ccpp install` and `ccpp sync`. They were emitted by the parser but no caller read them.
+- **`~/.claude/settings.json`, `ccpp.config.json`, and `ccpp.lock.json` writes are atomic.** All three go through `writeFileAtomic` (temp + rename) — a SIGINT mid-write no longer leaves a torn JSON file that the next read rejects.
+- **Strict per-entry lockfile validation.** A hand-edited lockfile with a malformed entry (missing field, non-string field, non-ISO timestamp) now errors at parse time with a key-path message, instead of crashing downstream.
+- **`looksLikeSha` documentation + `LC_ALL=C` for git output.** Locale-fragile regex parses on git output (`set to <branch>`) are now locale-independent. Hex-named-branch limitation is documented at the function and the `--ref` help.
+
+### Features
+
+- **`--project` flag** on `init` and `install` forces project-scoped writes (`./ccpp.config.json`). Use it when committing the config to a team repo. Default is user-scope; existing project-scope configs win on read.
+- **Config-path precedence** is now: `--config <path>` > `--project` > `./ccpp.config.json` (if it exists) > `~/.ccpp/ccpp.config.json`. The lockfile is co-located with the config unless `--lockfile <path>` overrides.
+
+### Architecture
+
+- **`src/cli.ts` shrank from 1093 → ~390 lines.** Inline implementations of `init`, `install`, `list`, and `uninstall` moved to `src/commands/init.ts`, `src/commands/install.ts`, `src/commands/list.ts`, and `src/commands/uninstall.ts` — matching the existing pattern for `sync`, `config`, `status`, and the hooks. Cli.ts now does only argv wiring + thin glue + error classification.
+- **`src/lib/plan.ts`** — single source of truth for "manifest item → destination path". Both `installer.applyManifest` and `diff.computeChangeset` import it; the planner duplication that caused the agents bug is eliminated.
+- **`src/lib/policy.ts`** — `effectivePolicy` and `effectiveAutoAccept` extracted with a unit-tested precedence matrix.
+- **`src/lib/errors.ts`** — `UserError`/`EnvError`/`CollisionError` and the `EXIT` codes consolidated. `cli.ts:classifyAndExit` uses `instanceof` instead of duck-typing.
+- **`src/lib/layout.ts`** — `CLAUDE_LAYOUT` constants and `classifyDestination()` helper. Hardcoded `'commands'` / `'skills'` / `'agents'` strings removed from cli.ts, installer.ts, manifest.ts, install-wizard.ts, diff.ts.
+- **`src/lib/claudeSettings.ts`** — `ClaudeSettings` types and `readSettings`/`writeSettings`/`isCcppBlock` helpers (atomic). Removes ~100 lines of copy-paste between install-hook.ts and uninstall-hook.ts.
+- **`src/lib/json-stable.ts`** — deterministic JSON serializer extracted from the lockfile + config copies.
+- **`src/lib/fsutil.ts`** gains `pathExists` (was duplicated 4×) and `writeFileAtomic`. `readFileSafe` rewritten to use `O_NOFOLLOW` — opens, type-checks, and reads in a single atomic syscall, fully closing the lstat-then-read TOCTOU window.
+- **`runSync` decomposed** from a 205-line orchestrator with three duplicate `appendSyncLog` blocks into a 68-line orchestrator + named per-phase helpers (`syncOneSource`, `cloneAndParseSource`, `applySource`, `recordSkip`, `logSyncError`).
+- **`emitHuman` (status.ts) split** into `emitSourcesTable` and `emitRecentEvents`, both with an injected `WriteLine` for testable rendering.
+
+### Build / hardening
+
+- **Version inlined at build time** via `tsup --define`. The runtime no longer reads `package.json` (drops `readFileSync`, `__dirname`, the silent `'0.0.0'` fallback). Works the same under CJS and ESM.
+- **`readFileSafe` `maxBytes` cap** — defensive 50 MB default, configurable per-call. Refuses adversarial multi-GB blobs from a malicious source.
+- **`backupStamp`** appends 4 hex chars of randomness to avoid collisions when two backups land in the same millisecond.
+- **`HOOK_SCRIPT_BODY` ↔ `scripts/hook.sh` parity test** — the embedded copy and the docs copy must run the same commands. Drift used to be silent.
+
+### Tests
+
+213 → **246 tests** across **21 files**. Notable additions: `lib/plan.test.ts` (planner in isolation), `lib/policy.test.ts` (precedence matrix), `lib/term.test.ts` (color + table), `lib/url.test.ts` (the v0.2.1 shorthand parser, edge cases), per-entry lockfile validation cases, transactional-rollback regression cases, ls-remote ref classification, `emitHuman` renderer cases, sync-from-different-cwd regression for the user-scope fallback.
 
 ## [0.2.1] - 2026-05-09
 
