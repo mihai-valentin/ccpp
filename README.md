@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-D97757.svg)](https://claude.com/claude-code)
 
-Private skill / slash-command / subagent distribution for Claude Code teams. Syncs resources from private git repos (Bitbucket, GitLab, GitHub, self-hosted) into `~/.claude/` — preserving **short names**, using **native live-reload**, and working with whatever git auth the dev already has.
+Skill / slash-command / subagent distribution for Claude Code teams. Syncs resources from any git repo — public or private, on Bitbucket, GitLab, GitHub, or self-hosted — into `~/.claude/`, preserving **short names**, using **native live-reload**, and working with whatever git auth the dev already has.
 
 Distributed as a versioned tarball on the [GitHub Releases](https://github.com/mihai-valentin/ccpp/releases) page. After install, daily invocation is just `ccpp sync`.
 
@@ -70,7 +70,7 @@ The wizard only runs on the very first invocation (no `ccpp.config.json` yet). O
 #    create it on first use too — no separate init step required.
 ccpp init
 
-# 2. Install one or more source repos (private or public)
+# 2. Install one or more source repos (any URL git accepts — HTTPS or SSH, private or public)
 ccpp install git@bitbucket.org:your-org/ai-plugins.git
 ccpp install https://github.com/your-org/claude-plugins.git
 
@@ -109,7 +109,7 @@ ccpp install git@bitbucket.org:your-org/ai-plugins.git --project
 
 ## How it works
 
-ccpp reads each source's `.claude-plugin/marketplace.json` — the same manifest shape Claude Code already uses — and, when that file is missing, falls back to a convention scan: any directory under `plugins/<name>/` with a `.claude-plugin/plugin.json` is a plugin; any `commands/*.md` at the repo root is a standalone slash command; any `agents/*.md` at the repo root or under `plugins/<name>/agents/` is a Claude Code subagent. This means existing private repos that pre-date the marketplace format work without authoring a manifest first.
+ccpp reads each source's `.claude-plugin/marketplace.json` — the same manifest shape Claude Code already uses — and, when that file is missing, falls back to a convention scan: any directory under `plugins/<name>/` with a `.claude-plugin/plugin.json` is a plugin; any `commands/*.md` at the repo root is a standalone slash command; any `agents/*.md` at the repo root or under `plugins/<name>/agents/` is a Claude Code subagent. This means existing repos that pre-date the marketplace format work without authoring a manifest first.
 
 Content is written into Claude Code's native auto-discovery paths under `~/.claude/` — `commands/`, `skills/`, and `agents/`. Claude Code picks up changes on its own — no `/reload-plugins` or restart required. Short names (e.g. `/git-commit`, agent `triage`) are preserved; ccpp does **not** rewrite them to namespaced forms.
 
