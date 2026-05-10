@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { pathExists, readFileSafe } from './fsutil.js';
@@ -60,12 +61,22 @@ interface PlannedFile {
  * list the caller surfaces to the user. Always backs up an existing file
  * whose bytes differ from what is about to be written.
  *
- * Atomicity: this function is **not transactional**. A mid-loop write failure
- * leaves files already written on disk and the in-memory `lockfile` mutated up
- * to the failure point — the caller is responsible for deciding whether to
- * persist the partial lockfile. Recovery uses the `.bak.<timestamp>` files in
- * `result.backups`: any pre-existing file that would have been overwritten was
- * renamed (not deleted), so the user can restore it manually.
+ * Atomicity: writes go through a two-phase staging tree. **Phase 1** reads
+ * source bytes, classifies each plan item (skip / unchanged / write), and
+ * stages every byte to write under `<claudeHome>/.ccpp-staging-<id>/`. If
+ * any read or staging write fails, the whole staging tree is removed and
+ * `~/.claude/` is left untouched. **Phase 2** renames each staged file into
+ * place, backing up any pre-existing differing target to `.bak.<timestamp>`.
+ *
+ * Phase 2 is best-effort atomic per file (single `fs.rename` on the same
+ * filesystem) but not cross-file transactional — a phase-2 failure midway
+ * leaves earlier swaps committed. This is rare in practice (renames within
+ * one filesystem rarely fail once the parent dir exists) and the user still
+ * has the `.bak` files plus the staging tree (NOT cleaned on phase-2 failure)
+ * for manual recovery.
+ *
+ * The in-memory `lockfile` is mutated as files commit in phase 2 — entries
+ * for unchanged-but-tracked files are recorded in phase 1.
  */
 export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyManifestResult> {
   const plan = planFiles(opts);
@@ -79,51 +90,93 @@ export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyMa
 
   const now = new Date().toISOString();
 
-  for (const item of plan) {
-    const existingEntry = opts.lockfile.installed[item.destPath];
-    if (existingEntry && existingEntry.sourceUrl !== opts.sourceUrl) {
-      const preferred = opts.preferredSources?.[item.name];
-      if (preferred === opts.sourceUrl) {
-        // Incoming source explicitly preferred → overwrite.
-      } else if (preferred === existingEntry.sourceUrl) {
-        // Existing source explicitly preferred → silently skip the incoming file.
-        continue;
-      } else {
-        result.conflicts.push({
-          destPath: item.destPath,
-          currentSourceUrl: existingEntry.sourceUrl,
-          incomingSourceUrl: opts.sourceUrl,
-          name: item.name,
-        });
-        continue;
+  // Phase 1 — classify and stage. `toCommit` is the sequence of files we
+  // need to swap into place in phase 2 (skipping conflicts and unchanged
+  // files, both of which need no on-disk write).
+  type StagedWrite = { item: PlannedFile; stagePath: string; destExists: boolean };
+  const toCommit: StagedWrite[] = [];
+
+  const stagingId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
+  const stagingRoot = join(opts.claudeHome, `.ccpp-staging-${stagingId}`);
+
+  try {
+    for (const item of plan) {
+      const existingEntry = opts.lockfile.installed[item.destPath];
+      if (existingEntry && existingEntry.sourceUrl !== opts.sourceUrl) {
+        const preferred = opts.preferredSources?.[item.name];
+        if (preferred === opts.sourceUrl) {
+          // Incoming source explicitly preferred → fall through to write.
+        } else if (preferred === existingEntry.sourceUrl) {
+          // Existing source explicitly preferred → silently skip.
+          continue;
+        } else {
+          result.conflicts.push({
+            destPath: item.destPath,
+            currentSourceUrl: existingEntry.sourceUrl,
+            incomingSourceUrl: opts.sourceUrl,
+            name: item.name,
+          });
+          continue;
+        }
       }
+
+      // readFileSafe refuses to follow symlinks — source repos are
+      // partially-trusted input and a symlink could redirect the read to
+      // anything on the filesystem, including files Claude Code shouldn't see.
+      const sourceBytes = await readFileSafe(item.sourceAbsolute);
+      const destExists = await pathExists(item.destPath);
+
+      if (destExists) {
+        const destBytes = await fs.readFile(item.destPath);
+        if (sourceBytes.equals(destBytes)) {
+          result.unchanged.push(item.destPath);
+          opts.lockfile.installed[item.destPath] = lockEntry(item, opts, now);
+          continue;
+        }
+      }
+
+      // Stage path mirrors the dest path under claudeHome so the eventual
+      // rename is on the same filesystem (cheap and atomic).
+      const rel = relative(opts.claudeHome, item.destPath);
+      const stagePath = join(stagingRoot, rel);
+      await fs.mkdir(dirname(stagePath), { recursive: true });
+      await fs.writeFile(stagePath, sourceBytes);
+      toCommit.push({ item, stagePath, destExists });
     }
+  } catch (err) {
+    // Phase 1 failed — staging tree is the only side effect; clean it up so
+    // ~/.claude/ stays exactly as we found it.
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+    throw err;
+  }
 
+  if (toCommit.length === 0) {
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+    return result;
+  }
+
+  // Phase 2 — swap each staged file into place. On the same filesystem this
+  // is an atomic rename per file; cross-file atomicity is best-effort.
+  for (const { item, stagePath, destExists } of toCommit) {
     await fs.mkdir(dirname(item.destPath), { recursive: true });
-    // readFileSafe refuses to follow symlinks — source repos are
-    // partially-trusted input and a symlink could redirect the read to
-    // anything on the filesystem, including files Claude Code shouldn't see.
-    const sourceBytes = await readFileSafe(item.sourceAbsolute);
-    const destExists = await pathExists(item.destPath);
-
     if (destExists) {
-      const destBytes = await fs.readFile(item.destPath);
-      if (sourceBytes.equals(destBytes)) {
-        result.unchanged.push(item.destPath);
-        opts.lockfile.installed[item.destPath] = lockEntry(item, opts, now);
-        continue;
-      }
       const backupPath = `${item.destPath}.bak.${backupStamp()}`;
       await fs.rename(item.destPath, backupPath);
       result.backups.push(backupPath);
-      await fs.writeFile(item.destPath, sourceBytes);
+      await fs.rename(stagePath, item.destPath);
       result.updated.push(item.destPath);
     } else {
-      await fs.writeFile(item.destPath, sourceBytes);
+      await fs.rename(stagePath, item.destPath);
       result.installed.push(item.destPath);
     }
     opts.lockfile.installed[item.destPath] = lockEntry(item, opts, now);
   }
+
+  // All staged files have been moved out by phase 2; the staging tree only
+  // contains empty parent directories at this point. `force: true` makes
+  // the cleanup tolerate a partial phase 2 (some entries already moved,
+  // some left over).
+  await fs.rm(stagingRoot, { recursive: true, force: true });
 
   return result;
 }

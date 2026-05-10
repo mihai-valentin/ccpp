@@ -340,6 +340,75 @@ describe('applyManifest', () => {
     expect(await read(destPath)).toBe('from-A');
     expect(lockfile.installed[destPath]!.sourceUrl).toBe('https://a.git');
   });
+
+  it('staging tree is removed on success and ~/.claude/ contains no .ccpp-staging-* dir', async () => {
+    const helloSrc = await writeSourceFile('commands/hello.md', 'h');
+    const skillMd = await writeSourceFile('plugins/p/skills/s1/SKILL.md', 's');
+    const lockfile: Lockfile = emptyLockfile();
+    await applyManifest({
+      manifest: buildManifest({
+        standaloneCommands: [{ name: 'hello', sourceFile: helloSrc }],
+        plugins: [
+          {
+            name: 'p',
+            version: '0.1.0',
+            description: '',
+            dir: join(sourceRoot, 'plugins/p'),
+            commands: [],
+            skills: [
+              { name: 's1', sourceDir: join(sourceRoot, 'plugins/p/skills/s1'), files: [skillMd] },
+            ],
+            agents: [],
+          },
+        ],
+      }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-1',
+      claudeHome,
+      lockfile,
+    });
+
+    const claudeEntries = await listDir(claudeHome);
+    expect(claudeEntries.some((e) => e.startsWith('.ccpp-staging-'))).toBe(false);
+    expect(claudeEntries.sort()).toEqual(['commands', 'skills']);
+  });
+
+  it('phase-1 failure leaves ~/.claude/ untouched and removes the staging tree', async () => {
+    // Two source files: one valid, one a symlink that readFileSafe will refuse.
+    // Order matters — the symlink comes second so the first file is staged
+    // before the failure surfaces.
+    const okSrc = await writeSourceFile('commands/ok.md', 'ok body');
+    const linkPath = join(sourceRoot, 'commands', 'evil.md');
+    await fs.symlink(join(scratch, 'leak'), linkPath);
+
+    const lockfile: Lockfile = emptyLockfile();
+    await expect(
+      applyManifest({
+        manifest: buildManifest({
+          standaloneCommands: [
+            { name: 'ok', sourceFile: okSrc },
+            { name: 'evil', sourceFile: linkPath },
+          ],
+        }),
+        sourceUrl: 'https://x/one.git',
+        sourceSha: 'sha-1',
+        claudeHome,
+        lockfile,
+      }),
+    ).rejects.toThrow(/refusing to read symlink/i);
+
+    // The first command was staged; phase-1 cleanup should have removed it.
+    const claudeEntries = await listDir(claudeHome);
+    expect(claudeEntries.some((e) => e.startsWith('.ccpp-staging-'))).toBe(false);
+    // commands/ should not exist OR should be empty — applyManifest never
+    // created it because the throw came before phase 2.
+    const commandsDir = join(claudeHome, 'commands');
+    const cmds = await fs.readdir(commandsDir).catch(() => []);
+    expect(cmds).toEqual([]);
+
+    // Lockfile is empty — no entries committed.
+    expect(Object.keys(lockfile.installed)).toEqual([]);
+  });
 });
 
 describe('removeFromLockfile', () => {
