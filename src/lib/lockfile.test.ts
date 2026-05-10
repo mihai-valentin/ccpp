@@ -69,6 +69,73 @@ describe('readLockfile', () => {
     await fs.writeFile(path, '{ not valid json');
     await expect(readLockfile(path)).rejects.toThrow(/Failed to parse lockfile/);
   });
+
+  it('rejects a sources entry that is missing required fields', async () => {
+    const path = join(scratch, LOCKFILE_FILENAME);
+    await fs.writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        sources: { 'https://example.com/a.git': { sha: 'd', ref: 'main' } }, // missing lastSync
+        installed: {},
+      }),
+    );
+    await expect(readLockfile(path)).rejects.toThrow(/sources\["https:\/\/example.com\/a.git"\].lastSync/);
+  });
+
+  it('rejects a sources entry with a non-ISO lastSync', async () => {
+    const path = join(scratch, LOCKFILE_FILENAME);
+    await fs.writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        sources: {
+          'https://example.com/a.git': { sha: 'd', ref: 'main', lastSync: 'yesterday' },
+        },
+        installed: {},
+      }),
+    );
+    await expect(readLockfile(path)).rejects.toThrow(/must be an ISO-8601 timestamp/);
+  });
+
+  it('rejects an installed entry that is missing sourceUrl', async () => {
+    const path = join(scratch, LOCKFILE_FILENAME);
+    await fs.writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        sources: {},
+        installed: {
+          '/foo': {
+            sourcePath: 'p',
+            sourceSha: 's',
+            installedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      }),
+    );
+    await expect(readLockfile(path)).rejects.toThrow(/installed\["\/foo"\].sourceUrl/);
+  });
+
+  it('rejects an installed entry with a non-string sourceSha', async () => {
+    const path = join(scratch, LOCKFILE_FILENAME);
+    await fs.writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        sources: {},
+        installed: {
+          '/foo': {
+            sourceUrl: 'u',
+            sourcePath: 'p',
+            sourceSha: 42,
+            installedAt: '2026-01-01T00:00:00Z',
+          },
+        },
+      }),
+    );
+    await expect(readLockfile(path)).rejects.toThrow(/sourceSha/);
+  });
 });
 
 describe('stableStringify', () => {

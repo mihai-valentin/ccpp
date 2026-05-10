@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { writeFileAtomic } from './fsutil.js';
 import { stableStringifyValue } from './json-stable.js';
-import type { Lockfile } from './types.js';
+import type { LockInstalledEntry, LockSourceEntry, Lockfile } from './types.js';
 
 /** Path of `ccpp.lock.json` relative to a working directory. */
 export const LOCKFILE_FILENAME = 'ccpp.lock.json';
@@ -63,17 +63,80 @@ function validateLockfile(raw: unknown, path: string): Lockfile {
       `Unsupported lockfile version at ${path}: expected 1, got ${JSON.stringify(obj.version)}.`,
     );
   }
-  const sources = obj.sources;
-  if (!sources || typeof sources !== 'object' || Array.isArray(sources)) {
+
+  const rawSources = obj.sources;
+  if (!rawSources || typeof rawSources !== 'object' || Array.isArray(rawSources)) {
     throw new Error(`Invalid lockfile ${path}: "sources" must be an object.`);
   }
-  const installed = obj.installed;
-  if (!installed || typeof installed !== 'object' || Array.isArray(installed)) {
+  const sources: Record<string, LockSourceEntry> = {};
+  for (const [url, entry] of Object.entries(rawSources as Record<string, unknown>)) {
+    sources[url] = validateSourceEntry(entry, url, path);
+  }
+
+  const rawInstalled = obj.installed;
+  if (!rawInstalled || typeof rawInstalled !== 'object' || Array.isArray(rawInstalled)) {
     throw new Error(`Invalid lockfile ${path}: "installed" must be an object.`);
   }
+  const installed: Record<string, LockInstalledEntry> = {};
+  for (const [destPath, entry] of Object.entries(rawInstalled as Record<string, unknown>)) {
+    installed[destPath] = validateInstalledEntry(entry, destPath, path);
+  }
+
+  return { version: 1, sources, installed };
+}
+
+function validateSourceEntry(entry: unknown, url: string, path: string): LockSourceEntry {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`Invalid lockfile ${path}: sources["${url}"] must be an object.`);
+  }
+  const e = entry as Record<string, unknown>;
+  requireString(e.sha, `sources["${url}"].sha`, path);
+  requireString(e.ref, `sources["${url}"].ref`, path);
+  requireIsoTimestamp(e.lastSync, `sources["${url}"].lastSync`, path);
   return {
-    version: 1,
-    sources: sources as Lockfile['sources'],
-    installed: installed as Lockfile['installed'],
+    sha: e.sha as string,
+    ref: e.ref as string,
+    lastSync: e.lastSync as string,
   };
+}
+
+function validateInstalledEntry(
+  entry: unknown,
+  destPath: string,
+  path: string,
+): LockInstalledEntry {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`Invalid lockfile ${path}: installed["${destPath}"] must be an object.`);
+  }
+  const e = entry as Record<string, unknown>;
+  requireString(e.sourceUrl, `installed["${destPath}"].sourceUrl`, path);
+  requireString(e.sourcePath, `installed["${destPath}"].sourcePath`, path);
+  requireString(e.sourceSha, `installed["${destPath}"].sourceSha`, path);
+  requireIsoTimestamp(e.installedAt, `installed["${destPath}"].installedAt`, path);
+  return {
+    sourceUrl: e.sourceUrl as string,
+    sourcePath: e.sourcePath as string,
+    sourceSha: e.sourceSha as string,
+    installedAt: e.installedAt as string,
+  };
+}
+
+function requireString(v: unknown, field: string, path: string): void {
+  if (typeof v !== 'string' || v.length === 0) {
+    throw new Error(`Invalid lockfile ${path}: ${field} must be a non-empty string.`);
+  }
+}
+
+function requireIsoTimestamp(v: unknown, field: string, path: string): void {
+  if (typeof v !== 'string' || !isIsoTimestamp(v)) {
+    throw new Error(`Invalid lockfile ${path}: ${field} must be an ISO-8601 timestamp.`);
+  }
+}
+
+function isIsoTimestamp(s: string): boolean {
+  // Date.parse returns NaN for unparseable input. Round-trip the date so
+  // we don't accept loose strings like "today" or "2026" — the year-month-day
+  // prefix must match what Date back-formats.
+  const parsed = Date.parse(s);
+  return !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 10) === s.slice(0, 10);
 }

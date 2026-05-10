@@ -109,8 +109,16 @@ describe('runStatus', () => {
     await writeLock({
       version: 1,
       sources: {
-        'https://example.com/skip.git': { sha: 'a', ref: 'main', lastSync: 't' },
-        'https://example.com/fail.git': { sha: 'b', ref: 'main', lastSync: 't' },
+        'https://example.com/skip.git': {
+          sha: 'a',
+          ref: 'main',
+          lastSync: '2026-04-01T00:00:00Z',
+        },
+        'https://example.com/fail.git': {
+          sha: 'b',
+          ref: 'main',
+          lastSync: '2026-04-02T00:00:00Z',
+        },
       },
       installed: {},
     });
