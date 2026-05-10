@@ -1,6 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { cac } from 'cac';
 import { type ConfigAction, runConfig } from './commands/config.js';
 import { type HookScope, type InstallHookResult, runInstallHook } from './commands/install-hook.js';
@@ -52,6 +52,8 @@ interface CommonOpts {
   claudeHome?: string;
   config?: string;
   lockfile?: string;
+  /** Force the project-scoped config (`./ccpp.config.json`) for write commands. */
+  project?: boolean;
   json?: boolean;
   quiet?: boolean;
   noColor?: boolean;
@@ -84,14 +86,53 @@ function resolveSourceUrlAndRef(
   return { url: split.url, ref: split.ref ?? flagRef };
 }
 
+/**
+ * Root for the user-scoped config + lockfile. `$CCPP_HOME` overrides for
+ * tests and power users; otherwise `~/.ccpp/`.
+ */
+function defaultUserCcppHome(): string {
+  const env = process.env.CCPP_HOME;
+  if (env && env.length > 0) return env;
+  return join(homedir(), '.ccpp');
+}
+
+/**
+ * Resolve where ccpp.config.json + ccpp.lock.json live for this run.
+ *
+ * Precedence:
+ *   1. `--config <path>` (explicit, wins outright; lockfile is co-located unless `--lockfile <path>` is also passed).
+ *   2. `--project` flag → `./ccpp.config.json`.
+ *   3. `./ccpp.config.json` exists → use it (preserves the team-share workflow).
+ *   4. Fallback to user-scoped `~/.ccpp/ccpp.config.json` (or `$CCPP_HOME/`).
+ *
+ * The user-scoped fallback is what makes the SessionStart hook work
+ * regardless of which directory Claude Code launches from.
+ */
 function commonPaths(opts: CommonOpts): ResolvedCommon {
   if (opts.noColor) disableColor();
+
+  const projectConfigPath = resolve(process.cwd(), CONFIG_FILENAME);
+  const userConfigPath = join(defaultUserCcppHome(), CONFIG_FILENAME);
+
+  let configPath: string;
+  if (opts.config) {
+    configPath = resolve(opts.config);
+  } else if (opts.project) {
+    configPath = projectConfigPath;
+  } else if (existsSync(projectConfigPath)) {
+    configPath = projectConfigPath;
+  } else {
+    configPath = userConfigPath;
+  }
+
+  const lockfilePath = opts.lockfile
+    ? resolve(opts.lockfile)
+    : join(dirname(configPath), LOCKFILE_FILENAME);
+
   return {
     claudeHome: opts.claudeHome ? resolve(opts.claudeHome) : join(homedir(), '.claude'),
-    configPath: opts.config ? resolve(opts.config) : resolve(process.cwd(), CONFIG_FILENAME),
-    lockfilePath: opts.lockfile
-      ? resolve(opts.lockfile)
-      : resolve(process.cwd(), LOCKFILE_FILENAME),
+    configPath,
+    lockfilePath,
     json: Boolean(opts.json),
     quiet: Boolean(opts.quiet),
   };
@@ -113,8 +154,12 @@ function readPkgVersion(): string {
 function attachCommonOptions<T extends { option: (flag: string, desc: string) => T }>(cmd: T): T {
   cmd
     .option('--claude-home <path>', 'Override ~/.claude')
-    .option('--config <path>', `Override ./${CONFIG_FILENAME}`)
-    .option('--lockfile <path>', `Override ./${LOCKFILE_FILENAME}`)
+    .option('--config <path>', `Override config-path resolution (default: ./${CONFIG_FILENAME} > ~/.ccpp/${CONFIG_FILENAME})`)
+    .option('--lockfile <path>', `Override lockfile path (default: co-located with config)`)
+    .option(
+      '--project',
+      `Force project-scoped ./${CONFIG_FILENAME} (default for write commands is user-scoped ~/.ccpp/${CONFIG_FILENAME})`,
+    )
     .option('--json', 'Emit machine-readable JSON instead of human output')
     .option('--quiet', 'Suppress non-error output')
     .option('--no-color', 'Disable ANSI color codes');
@@ -272,17 +317,22 @@ async function installSource(params: InstallSourceParams): Promise<InstallSource
   await writeLockfile(common.lockfilePath, lockfile);
 
   let finalConfig: CcppConfig | null = existing;
-  if (existing && !scratch) {
-    if (!existing.sources.some((s) => s.url === url)) {
+  if (!scratch) {
+    // Always persist a config on a non-scratch install — even if none
+    // existed before. The previous behavior (writing only the lockfile
+    // when no config existed) left the user in a state where the next
+    // `ccpp sync` would error with "No ccpp.config.json".
+    const config = existing ?? emptyConfig();
+    if (!config.sources.some((s) => s.url === url)) {
       const src: ConfigSource = { url };
       if (ref) src.ref = ref;
-      existing.sources.push(src);
+      config.sources.push(src);
     }
     if (forcePreferIncoming || conflictsResolved) {
-      existing.preferredSources = preferredSources;
+      config.preferredSources = preferredSources;
     }
-    await writeConfig(common.configPath, existing);
-    finalConfig = existing;
+    await writeConfig(common.configPath, config);
+    finalConfig = config;
   }
 
   return { synced, result, config: finalConfig };
@@ -776,6 +826,7 @@ function emitInstallSummary(
     `${green('✓')} ${url} ${dim(`@${formatShortSha(sha)}`)} (${ref}) — ${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged`,
     common,
   );
+  log(`  ${dim('config:')} ${common.configPath}`, common);
   if (result.backups.length > 0) {
     log(`  ${yellow('!')} ${result.backups.length} file(s) backed up:`, common);
     for (const bak of result.backups) log(`    ${dim(bak)}`, common);

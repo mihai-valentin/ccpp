@@ -91,7 +91,10 @@ function cli(
   const withHome = args.includes('--claude-home')
     ? args
     : [...args, '--claude-home', opts.claudeHome];
-  return run('node', [cliPath, ...withHome], opts);
+  // Pin CCPP_HOME to the cwd so user-scope config fallback collapses onto
+  // the project path (same idiom as tests/cli.test.ts).
+  const env = { CCPP_HOME: opts.cwd, ...opts.env };
+  return run('node', [cliPath, ...withHome], { ...opts, env });
 }
 
 /* ---------- fixture content mirroring a real-world private skills repo ---------- */

@@ -53,7 +53,13 @@ function cli(
   args: string[],
   opts: { cwd: string; env?: Record<string, string> },
 ): Promise<RunResult> {
-  return run('node', [cliPath, ...args], opts);
+  // Pin CCPP_HOME to the test scratch dir so the user-scoped config fallback
+  // (`~/.ccpp/ccpp.config.json`) collapses onto `<scratch>/ccpp.config.json`
+  // — same physical path the project-scope precedence would resolve to when
+  // the test cwd is also <scratch>. Tests that assert specific paths via
+  // `${scratch}/ccpp.config.json` continue to work unchanged.
+  const env = { CCPP_HOME: opts.cwd, ...opts.env };
+  return run('node', [cliPath, ...args], { ...opts, env });
 }
 
 let scratch: string;
@@ -330,6 +336,76 @@ describe('exit codes', () => {
 
       const cfg = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
       expect(cfg.sources).toEqual([{ ref: sha, url: fx.url }]);
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
+
+  it('install writes ccpp.config.json (no prior init required) — closes #9', async () => {
+    const fx = await createLocalGitFixture('ccpp-cli-install-no-init');
+    try {
+      await fs.mkdir(join(fx.workPath, 'commands'), { recursive: true });
+      await fx.advance('commands/one.md', '# v1\n');
+
+      const claudeHome = join(scratch, 'claude');
+      const cacheRoot = join(scratch, 'cache');
+      // Crucially: no `init` step. The previous behavior was to write only
+      // the lockfile and silently fail to persist intent.
+      const { code } = await cli(
+        ['install', fx.url, '--claude-home', claudeHome],
+        { cwd: scratch, env: { CCPP_CACHE: cacheRoot } },
+      );
+      expect(code).toBe(0);
+
+      const cfg = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
+      expect(cfg.sources).toEqual([{ url: fx.url }]);
+      expect(cfg.scope).toBe('user');
+    } finally {
+      await fx.cleanup();
+    }
+  }, 30_000);
+
+  it('sync works from a different cwd via the user-scoped config fallback — closes #8', async () => {
+    const fx = await createLocalGitFixture('ccpp-cli-cwd-fallback');
+    try {
+      await fs.mkdir(join(fx.workPath, 'commands'), { recursive: true });
+      await fx.advance('commands/one.md', '# hello\n');
+
+      const claudeHome = join(scratch, 'claude');
+      const cacheRoot = join(scratch, 'cache');
+      const userCcppHome = join(scratch, 'ccpp-home');
+      const otherCwd = join(scratch, 'unrelated-dir');
+      await fs.mkdir(userCcppHome, { recursive: true });
+      await fs.mkdir(otherCwd, { recursive: true });
+
+      // Install with CCPP_HOME pointed at a dedicated user-scope dir so the
+      // config does NOT land in `${scratch}/ccpp.config.json` (where the
+      // helper's default would put it). The install therefore writes to
+      // the *user-scope* path only — exactly the case the cwd-coupling
+      // bug was about.
+      const installRes = await cli(
+        ['install', fx.url, '--claude-home', claudeHome],
+        {
+          cwd: scratch,
+          env: { CCPP_CACHE: cacheRoot, CCPP_HOME: userCcppHome },
+        },
+      );
+      expect(installRes.code).toBe(0);
+
+      // Confirm the project-scope path is empty and the user-scope path holds the config.
+      await expect(fs.access(join(scratch, 'ccpp.config.json'))).rejects.toThrow();
+      const userCfg = JSON.parse(
+        await fs.readFile(join(userCcppHome, 'ccpp.config.json'), 'utf8'),
+      );
+      expect(userCfg.sources.map((s: { url: string }) => s.url)).toEqual([fx.url]);
+
+      // Now run `ccpp sync` from a totally different cwd that has no project
+      // config. The user-scope fallback must kick in.
+      const syncRes = await cli(['sync', '--auto-accept', '--claude-home', claudeHome], {
+        cwd: otherCwd,
+        env: { CCPP_CACHE: cacheRoot, CCPP_HOME: userCcppHome },
+      });
+      expect(syncRes.code).toBe(0);
     } finally {
       await fx.cleanup();
     }

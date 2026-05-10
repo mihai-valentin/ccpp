@@ -52,7 +52,11 @@ function cli(
   args: string[],
   opts: { cwd: string; env?: Record<string, string> },
 ): Promise<RunResult> {
-  return run('node', [cliPath, ...args], opts);
+  // Pin CCPP_HOME to the test cwd so the user-scope config fallback collapses
+  // onto <cwd>/ccpp.config.json — same physical path the project-scope path
+  // resolves to. Tests asserting `${scratch}/ccpp.config.json` keep working.
+  const env = { CCPP_HOME: opts.cwd, ...opts.env };
+  return run('node', [cliPath, ...args], { ...opts, env });
 }
 
 let scratch: string;

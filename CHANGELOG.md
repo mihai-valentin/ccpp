@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-05-10
+
+- Fix: **`ccpp install <url>` and `ccpp init` now default to user-scoped config at `~/.ccpp/ccpp.config.json`** (override with `$CCPP_HOME`). Previously the config defaulted to the cwd, which broke the SessionStart auto-update flow — the hook runs from whatever directory Claude Code launches with, so a config landed in `~/projects/A` was invisible if the user opened Claude Code from `~/projects/B`. The hook silently exited 0 (stderr piped to a log) so the failure was invisible.
+- Fix: **`ccpp install <url>` always writes a config** (unless `--scratch`). The previous behavior wrote only the lockfile when no config existed, leaving the user in a state where the next `ccpp sync` errored with "No ccpp.config.json".
+- Feature: read precedence is `--config <path>` > `--project` flag > `./ccpp.config.json` (if it exists) > `~/.ccpp/ccpp.config.json`. The lockfile is co-located with the config (`ccpp.lock.json` in the same dir) unless `--lockfile <path>` overrides.
+- Feature: new `--project` flag forces project-scoped writes. Use it when committing `ccpp.config.json` to a repo for team-share setups.
+- Fix: **commit-SHA refs are classified via `git ls-remote`, not a hex-shape heuristic.** A branch literally named like a SHA (e.g. `abc1234`) used to silently misroute through the SHA path: detached-HEAD checkout, no `reset --hard origin/<ref>` on subsequent syncs — so upstream branch tip moves never landed. Now `git ls-remote --exit-code <url> refs/heads/<ref> refs/tags/<ref>` is authoritative; auth/network failures re-throw with a clear diagnostic instead of silently routing to the SHA path.
+- Fix: **`applyManifest` is now transactional via a two-phase staging tree.** Phase 1 reads source bytes, classifies each plan item, and stages everything to write under `<claudeHome>/.ccpp-staging-<id>/`. Phase 2 atomic-renames each staged file into place (with a `.bak.<ts>` of any pre-existing differing target). A phase-1 failure removes the staging tree and leaves `~/.claude/` untouched. Replaces the previous in-place-write loop that left half-applied state on mid-loop failure.
+- Tests: 215/215 → 222/222 (+7). Two regression tests pin the cwd-fallback (sync from a different cwd) and the auto-config-creation behavior. Two more pin the SHA vs hex-named-branch classification. Two more pin the `applyManifest` rollback semantics.
+
 ## [0.2.1] - 2026-05-09
 
 - Feature: **`<url>@<ref>` shorthand** on `ccpp install` and `ccpp init --source`. `ccpp install git@bitbucket.org:my/repo@v1.0.0` is equivalent to `ccpp install git@bitbucket.org:my/repo --ref v1.0.0`. Works with branches, tags, and full or short commit SHAs. The trailing `@<ref>` is recognized only when the `@` appears after the last `/` or `:`, so SCP-style SSH URLs (`git@host:path`) and HTTPS auth (`https://user:pass@host/path`) keep working unchanged. Refs containing `/` (e.g. `feature/foo`) can't ride the shorthand — fall back to `--ref feature/foo`.

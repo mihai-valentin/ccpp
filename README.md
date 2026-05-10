@@ -35,7 +35,8 @@ The wizard only runs on the very first invocation (no `ccpp.config.json` yet). O
 ### Explicit form — always available, scriptable
 
 ```bash
-# 1. Create ccpp.config.json (non-interactive — no prompts, no plan preview)
+# 1. (optional) Create ccpp.config.json explicitly. `ccpp install <url>` will
+#    create it on first use too — no separate init step required.
 npx ccpp init
 
 # 2. Install one or more source repos (private or public)
@@ -57,6 +58,22 @@ npx ccpp list
 
 # 5. Remove a source
 npx ccpp uninstall ai-plugins
+```
+
+### Where the config lives
+
+ccpp resolves `ccpp.config.json` (and the co-located `ccpp.lock.json`) using this precedence:
+
+1. `--config <path>` if explicitly passed.
+2. `--project` flag → forces `./ccpp.config.json`.
+3. `./ccpp.config.json` if it exists in the current directory (preserves the team-share workflow — commit it to your repo).
+4. `~/.ccpp/ccpp.config.json` (or `$CCPP_HOME/ccpp.config.json`) — the user-scoped fallback.
+
+Default for `ccpp init` and `ccpp install` is **user-scoped** (#4). This makes the SessionStart auto-update hook work regardless of which directory Claude Code launches from. If you want the team-share shape (config checked into the repo so teammates get byte-identical installs), pass `--project` to opt in:
+
+```bash
+# Team-share: ccpp.config.json + ccpp.lock.json land in the repo, ready to commit
+npx ccpp install git@bitbucket.org:your-org/ai-plugins.git --project
 ```
 
 ## How it works
