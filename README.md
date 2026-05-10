@@ -2,7 +2,9 @@
 
 [![QA](https://github.com/mihai-valentin/ccpp/actions/workflows/qa.yml/badge.svg)](https://github.com/mihai-valentin/ccpp/actions/workflows/qa.yml)
 [![Release](https://github.com/mihai-valentin/ccpp/actions/workflows/release.yml/badge.svg)](https://github.com/mihai-valentin/ccpp/actions/workflows/release.yml)
+[![Coverage](https://img.shields.io/badge/coverage-80%25%20branches-yellowgreen.svg)](#test-coverage)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-D97757.svg)](https://claude.com/claude-code)
 
 Private skill / slash-command / subagent distribution for Claude Code teams. Syncs resources from private git repos (Bitbucket, GitLab, GitHub, self-hosted) into `~/.claude/` — preserving **short names**, using **native live-reload**, and working with whatever git auth the dev already has.
 
@@ -289,4 +291,21 @@ make install
 make verify
 ```
 
-Test layout — unit tests live next to the source (`src/**/*.test.ts`) and CLI / end-to-end tests in `tests/` (including `tests/integration/` for bare-git-fixture-driven flows). All 175 tests run in under 10 seconds.
+Test layout — unit tests live next to the source (`src/**/*.test.ts`) and CLI / end-to-end tests in `tests/` (including `tests/integration/` for bare-git-fixture-driven flows). The default suite runs 257 tests in under 10 seconds.
+
+### Test coverage
+
+Run with `npm run coverage` (uses `@vitest/coverage-v8`). Headline numbers as of v0.2.2:
+
+```
+statements  61.27%   branches  80.08%   functions  81.70%   lines  61.27%
+```
+
+The 61% statements/lines figure is artificially low because `src/cli.ts` and several command modules are exercised end-to-end via subprocess (`node dist/cli.cjs` spawned from `tests/cli.test.ts` and `tests/cli-config.test.ts`); v8 in-process coverage doesn't trace subprocess execution. The lib layer (`src/lib/`) sits at **84% lines** in-process, with seven modules at 100% (`diff`, `errors`, `iso`, `layout`, `plan`, `policy`, `url`) and the remainder above 87% — so **branch coverage at 80%** is the most representative single number. The HTML report at `coverage/index.html` shows per-file detail.
+
+Additional opt-in test layers:
+
+```bash
+npm run test:e2e          # vitest e2e against the real ccpp-test-pingpong remote (network)
+npm run test:e2e:install  # bash — packs ccpp, npm-installs the tarball, runs against the same remote
+```
