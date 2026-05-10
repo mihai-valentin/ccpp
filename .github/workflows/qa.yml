@@ -34,6 +34,9 @@ jobs:
       - name: CI gate (install, build, typecheck, test, pack-check)
         run: make ci
 
+      - name: Smoke (bash, offline — bundle vs local bare-git fixture)
+        run: make smoke
+
       - name: Lint (advisory — does not fail the pipeline)
         run: make lint
         continue-on-error: true
