@@ -31,7 +31,12 @@
   "bin": {
     "ccpp": "dist/cli.cjs"
   },
-  "files": ["dist", "LICENSE", "CHANGELOG.md", "README.md"],
+  "files": [
+    "dist",
+    "LICENSE",
+    "CHANGELOG.md",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -44,6 +49,7 @@
     "test": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:e2e:install": "bash scripts/e2e-install.sh",
+    "coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "prepack": "npm run build",
@@ -55,6 +61,7 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^20.14.0",
+    "@vitest/coverage-v8": "^2.1.9",
     "tsup": "^8.3.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
