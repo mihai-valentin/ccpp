@@ -6,10 +6,10 @@ import { defineConfig } from 'vitest/config';
  * timeout is bumped from the default 5s.
  *
  * Requires:
- *   - SSH agent or `~/.ssh/config` set up for `git@github.com:...`
- *   - Network access to github.com
+ *   - Network access to github.com (the fixture is a public repo, no
+ *     auth needed — pulled over HTTPS).
  *
- * The suite probes SSH access in beforeAll and skips itself with a
+ * The suite probes the remote in beforeAll and skips itself with a
  * clear message if the probe fails.
  */
 export default defineConfig({

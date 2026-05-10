@@ -11,19 +11,19 @@
 #      exercising the bin-shim setup the user actually gets when they run
 #      `npm install -g ccpp` or `npx ccpp`.
 #   3. Runs the resulting `ccpp` binary against the real `ccpp-test-pingpong`
-#      remote on GitHub — same SSH auth path a user would hit.
+#      remote on GitHub (public repo, pulled over HTTPS — no auth needed).
 #   4. Asserts the full lifecycle: install → list → sync → uninstall.
 #
-# Requires: SSH access to git@github.com and `node`/`npm` on PATH.
+# Requires: network access to github.com and `node`/`npm` on PATH.
 # Usage:    bash scripts/e2e-install.sh
 # Or:       npm run test:e2e:install
 #
 # Exits 0 on success, non-zero on first failed step. Prints a clear
-# skip-with-reason if SSH is unavailable.
+# skip-with-reason if the remote is unreachable.
 
 set -euo pipefail
 
-REMOTE="git@github.com:mihai-valentin/ccpp-test-pingpong.git"
+REMOTE="https://github.com/mihai-valentin/ccpp-test-pingpong.git"
 TAG="v0.1.0"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -39,12 +39,12 @@ jq_get() {
   node -e 'const o=JSON.parse(require("fs").readFileSync(0,"utf8")); console.log('"$1"');'
 }
 
-# Probe SSH access. If the remote isn't reachable, skip with a clear reason
-# rather than fail mysteriously — same UX as the vitest e2e suite.
+# Probe the remote. If unreachable, skip with a clear reason rather than
+# fail mysteriously — same UX as the vitest e2e suite.
 if ! git ls-remote --exit-code --quiet "$REMOTE" refs/heads/master >/dev/null 2>&1; then
   echo
-  echo "⚠ SSH probe of $REMOTE failed — skipping e2e-install."
-  echo "  Set up SSH access to github.com (an agent or ~/.ssh/config), then re-run."
+  echo "⚠ probe of $REMOTE failed — skipping e2e-install."
+  echo "  Re-run with network access to github.com."
   exit 0
 fi
 
@@ -63,7 +63,8 @@ mkdir -p "$INSTALL_DIR" "$CLAUDE_HOME" "$CCPP_HOME_DIR" "$CACHE"
 export CCPP_HOME="$CCPP_HOME_DIR"
 export CCPP_CACHE="$CACHE"
 export NO_COLOR=1
-# Block git from prompting for credentials — we want SSH or fail.
+# Block git from prompting for credentials — the fixture is public over
+# HTTPS, so any prompt would mean something's actually wrong.
 export GIT_TERMINAL_PROMPT=0
 
 # -------- 1. pack --------

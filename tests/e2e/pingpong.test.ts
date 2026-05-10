@@ -8,13 +8,13 @@
  *   - tag v0.1.0 at the initial commit
  *
  * These tests cover the install paths that file:// fixtures can't fully
- * mirror — real SSH auth, real GitHub git protocol, ref resolution
- * against a real remote.
+ * mirror — real GitHub git protocol over HTTPS, ref resolution against
+ * a real remote, cache reuse.
  *
- * **Not run by default.** Invoke with `npm run test:e2e`. Requires SSH
- * access to github.com. The suite probes SSH and skips itself (with a
- * clear console message) if the probe fails — first-run on a fresh box
- * without keys won't fail mysteriously.
+ * **Not run by default.** Invoke with `npm run test:e2e`. The fixture
+ * is a public repo so no auth is needed — just network access to
+ * github.com. The suite probes the remote and skips itself (with a
+ * clear console message) if the probe fails.
  */
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-const REMOTE = 'git@github.com:mihai-valentin/ccpp-test-pingpong.git';
+const REMOTE = 'https://github.com/mihai-valentin/ccpp-test-pingpong.git';
 const TAG = 'v0.1.0';
 const projectRoot = resolve(__dirname, '..', '..');
 const cliPath = join(projectRoot, 'dist', 'cli.cjs');
@@ -96,8 +96,9 @@ let skipReason = '';
 beforeAll(async () => {
   await ensureBuilt();
 
-  // Probe SSH access. `git ls-remote --exit-code` on the real remote is the
-  // most honest check — it exercises the same auth path ccpp will use.
+  // Probe network reachability. `git ls-remote --exit-code` on the real
+  // remote is the most honest check — exercises the same protocol ccpp
+  // will use. The fixture is a public repo so no auth is involved.
   cacheRoot = await fs.mkdtemp(join(tmpdir(), 'ccpp-e2e-cache-'));
   const probe = await run(
     'git',
@@ -108,9 +109,9 @@ beforeAll(async () => {
     networkAvailable = true;
   } else {
     skipReason = probe.stderr.trim() || `git ls-remote exited ${probe.code}`;
-    console.warn(`\n⚠ ccpp e2e suite SKIPPED — SSH probe of ${REMOTE} failed.`);
+    console.warn(`\n⚠ ccpp e2e suite SKIPPED — probe of ${REMOTE} failed.`);
     console.warn(`  Reason: ${skipReason}`);
-    console.warn('  Run with SSH access to github.com (an agent or ~/.ssh/config entry).\n');
+    console.warn('  Re-run with network access to github.com.\n');
   }
 }, 60_000);
 
