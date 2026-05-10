@@ -111,39 +111,66 @@ export async function runStatus(opts: RunStatusOpts): Promise<StatusReport> {
   return report;
 }
 
-function emitHuman(report: StatusReport): void {
-  if (report.sources.length === 0) {
-    process.stdout.write(`${dim('(no sources configured)')}\n`);
-  } else {
-    const header = [bold('SOURCE'), bold('POLICY'), bold('LAST_SYNC'), bold('SHA'), bold('STATUS')];
-    const rows: string[][] = [header];
-    for (const s of report.sources) {
-      rows.push([
-        s.url,
-        s.policy,
-        s.lastSync ?? dim('—'),
-        s.sha ? formatShortSha(s.sha) : dim('—'),
-        renderStatus(s),
-      ]);
-    }
-    for (const line of formatTable(rows)) process.stdout.write(`${line}\n`);
-  }
+/**
+ * Function used by the human-output renderers to commit a line. The default
+ * is `process.stdout.write`; tests pass a buffering function so they can
+ * assert against captured output without monkey-patching the stdout stream.
+ */
+export type WriteLine = (line: string) => void;
 
+const defaultWrite: WriteLine = (line) => {
+  process.stdout.write(line);
+};
+
+/**
+ * Render the full human report — sources table followed by the recent-events
+ * tail. Composed of two independently-callable renderers so future flags
+ * (e.g. `--sources-only`) can drop one section without threading a parameter
+ * through.
+ */
+export function emitHuman(report: StatusReport, write: WriteLine = defaultWrite): void {
+  emitSourcesTable(report, write);
   if (report.recent.length > 0) {
-    process.stdout.write(`\n${bold('Recent events:')}\n`);
-    for (const e of report.recent) {
-      const icon =
-        e.outcome === 'success' ? green('✓') : e.outcome === 'skipped' ? yellow('!') : red('✗');
-      const summary = e.changeset
-        ? `+${e.changeset.added}/~${e.changeset.modified}/-${e.changeset.removed}`
-        : e.error
-          ? e.error.slice(0, 60)
-          : '';
-      const source = e.sourceUrl ? ` ${dim(e.sourceUrl)}` : '';
-      process.stdout.write(
-        `${`  ${icon} ${e.timestamp}  ${e.trigger}${source}  ${summary}\n`.trimEnd()}\n`,
-      );
-    }
+    write(`\n${bold('Recent events:')}\n`);
+    emitRecentEvents(report, write);
+  }
+}
+
+/**
+ * Render the per-source table: SOURCE / POLICY / LAST_SYNC / SHA / STATUS.
+ * Falls back to a `(no sources configured)` line when the report has none.
+ */
+export function emitSourcesTable(report: StatusReport, write: WriteLine = defaultWrite): void {
+  if (report.sources.length === 0) {
+    write(`${dim('(no sources configured)')}\n`);
+    return;
+  }
+  const header = [bold('SOURCE'), bold('POLICY'), bold('LAST_SYNC'), bold('SHA'), bold('STATUS')];
+  const rows: string[][] = [header];
+  for (const s of report.sources) {
+    rows.push([
+      s.url,
+      s.policy,
+      s.lastSync ?? dim('—'),
+      s.sha ? formatShortSha(s.sha) : dim('—'),
+      renderStatus(s),
+    ]);
+  }
+  for (const line of formatTable(rows)) write(`${line}\n`);
+}
+
+/** Render the tail of recent sync.log events: icon + timestamp + trigger + summary. */
+export function emitRecentEvents(report: StatusReport, write: WriteLine = defaultWrite): void {
+  for (const e of report.recent) {
+    const icon =
+      e.outcome === 'success' ? green('✓') : e.outcome === 'skipped' ? yellow('!') : red('✗');
+    const summary = e.changeset
+      ? `+${e.changeset.added}/~${e.changeset.modified}/-${e.changeset.removed}`
+      : e.error
+        ? e.error.slice(0, 60)
+        : '';
+    const source = e.sourceUrl ? ` ${dim(e.sourceUrl)}` : '';
+    write(`${`  ${icon} ${e.timestamp}  ${e.trigger}${source}  ${summary}\n`.trimEnd()}\n`);
   }
 }
 
