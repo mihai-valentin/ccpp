@@ -37,3 +37,35 @@ jobs:
       - name: Lint (advisory — does not fail the pipeline)
         run: make lint
         continue-on-error: true
+
+  # End-to-end suites against the public ccpp-test-pingpong fixture on
+  # GitHub. Network-dependent but auth-free (the fixture is a public repo
+  # pulled over HTTPS). Gated on `qa` so we don't burn CI minutes on a
+  # broken-source-compile PR. Both suites self-skip with exit-0 if the
+  # fixture remote is unreachable, so a transient github outage doesn't
+  # turn into a false-positive PR failure.
+  e2e:
+    needs: qa
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dist/
+        run: npm run build
+
+      - name: E2E — vitest against the public ping-pong remote
+        run: npm run test:e2e
+
+      - name: E2E — bash, real `npm install` of the packed tarball
+        run: npm run test:e2e:install
