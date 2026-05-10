@@ -109,6 +109,53 @@ describe('cloneOrUpdate', () => {
     await expect(fs.access(join(after.localPath, 'new-file.txt'))).resolves.toBeUndefined();
   });
 
+  it('treats a hex-named branch as a branch (not a SHA) — ls-remote probe replaces the heuristic', async () => {
+    // Set up a fresh fixture with a branch literally named like a 7-char SHA.
+    const fx = await createLocalGitFixture('ccpp-hexbranch');
+    const localCache = await fs.mkdtemp(join(tmpdir(), 'ccpp-hexbranch-cache-'));
+    try {
+      // Create branch `abc1234` on the work repo and push it.
+      const tipSha = await fx.advance('on-branch.md', 'on hex branch');
+      await runGit(['branch', 'abc1234'], { cwd: fx.workPath });
+      await runGit(['push', 'origin', 'abc1234'], { cwd: fx.workPath });
+
+      const result = await cloneOrUpdate(fx.url, { ref: 'abc1234', cacheRoot: localCache });
+      // Sanity: we got the branch tip, not some other SHA.
+      expect(result.sha).toBe(tipSha);
+      expect(result.ref).toBe('abc1234');
+
+      // The clone is on a *branch* named abc1234, not detached HEAD. After
+      // checkout, `git symbolic-ref HEAD` should resolve to refs/heads/abc1234
+      // — that's what proves the named-ref path was taken (the SHA path
+      // would have left HEAD detached).
+      const head = await runGit(['symbolic-ref', '-q', 'HEAD'], { cwd: result.localPath });
+      expect(head.stdout.trim()).toBe('refs/heads/abc1234');
+    } finally {
+      await fx.cleanup();
+      await fs.rm(localCache, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it('still treats a real commit SHA as a SHA (full clone, detached HEAD)', async () => {
+    const fx = await createLocalGitFixture('ccpp-realsha');
+    const localCache = await fs.mkdtemp(join(tmpdir(), 'ccpp-realsha-cache-'));
+    try {
+      const sha1 = await fx.advance('one.md', 'one');
+      // Advance further so the SHA we pin is not the current HEAD.
+      await fx.advance('two.md', 'two');
+
+      const result = await cloneOrUpdate(fx.url, { ref: sha1, cacheRoot: localCache });
+      expect(result.sha).toBe(sha1);
+      // SHA path leaves HEAD detached — symbolic-ref exits non-zero.
+      await expect(
+        runGit(['symbolic-ref', '-q', 'HEAD'], { cwd: result.localPath }),
+      ).rejects.toThrow();
+    } finally {
+      await fx.cleanup();
+      await fs.rm(localCache, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('surfaces git stderr in the error when the URL cannot be cloned', async () => {
     const badDir = await fs.mkdtemp(join(tmpdir(), 'ccpp-bad-'));
     const badUrl = `file://${join(badDir, 'does-not-exist.git')}`;

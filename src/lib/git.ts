@@ -89,11 +89,18 @@ export async function cloneOrUpdate(
   const cacheRoot = opts.cacheRoot ?? defaultCacheRoot();
   const localPath = cachePathFor(url, cacheRoot);
 
-  // `git clone --depth 1 --branch <ref>` only works for branches and tags.
-  // Commit SHAs need a non-shallow clone and no --branch arg, then a plain
+  // Decide whether `opts.ref` is a named ref (branch or tag) or a commit SHA
+  // by asking the remote — `git ls-remote` is authoritative and avoids the
+  // false positives of a hex-shape heuristic (a branch literally named
+  // `abc1234` would otherwise misroute to the SHA path, which silently
+  // skips the `reset --hard origin/<ref>` step on later syncs and never
+  // picks up upstream branch tip moves).
+  //
+  // `git clone --depth 1 --branch <ref>` only works for branches and tags;
+  // commit SHAs need a non-shallow clone and no --branch arg, then a plain
   // `git checkout <sha>` (no `origin/<sha>` reset since that ref doesn't
   // exist on the remote).
-  const refIsSha = opts.ref !== undefined && looksLikeSha(opts.ref);
+  const refIsSha = opts.ref !== undefined && !(await isNamedRefRemote(url, opts.ref));
 
   const alreadyCloned = await pathExists(join(localPath, '.git'));
   if (!alreadyCloned) {
@@ -124,17 +131,29 @@ export async function cloneOrUpdate(
 }
 
 /**
- * Heuristic — true if `ref` looks like a hex commit SHA (4-40 hex chars).
+ * True when `ref` exists as a branch or tag on the remote `url`.
  *
- * Limitation: a branch or tag literally named like a hex string (e.g.
- * `abc1234`) will be misclassified as a SHA. The clone path then does a full
- * (non-shallow) clone and a detached-HEAD checkout instead of a branch
- * checkout. This is rare enough that we accept the cost; users with such
- * branches should pass `--full-clone` and rely on the named-ref path
- * (currently exposed as `--ref` only — see git.ts CloneOrUpdateOptions).
+ * Uses `git ls-remote --exit-code` which exits 0 if at least one matching
+ * ref is returned, 2 if none match, and any other non-zero on auth/network
+ * failure. We resolve `false` only for the "no match" case (exit 2); other
+ * errors propagate to surface a meaningful message. This replaces a hex-
+ * shape heuristic that misclassified branches literally named like SHAs.
  */
-function looksLikeSha(ref: string): boolean {
-  return /^[0-9a-f]{4,40}$/i.test(ref);
+async function isNamedRefRemote(url: string, ref: string): Promise<boolean> {
+  try {
+    await runGit(
+      ['ls-remote', '--exit-code', '--quiet', url, `refs/heads/${ref}`, `refs/tags/${ref}`],
+      { cwd: undefined },
+    );
+    return true;
+  } catch (err) {
+    // runGit's error message format is `${cmd} failed (exit ${code}): ${tail}`.
+    // We only swallow the "no matching refs" case; any other failure (auth,
+    // DNS, repo-not-found) re-throws so the user sees a real diagnostic
+    // instead of a wrong-path SHA clone attempt.
+    if (/failed \(exit 2\)/.test((err as Error).message)) return false;
+    throw err;
+  }
 }
 
 async function isShallowRepo(repoDir: string): Promise<boolean> {
