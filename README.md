@@ -8,22 +8,47 @@
 
 Private skill / slash-command / subagent distribution for Claude Code teams. Syncs resources from private git repos (Bitbucket, GitLab, GitHub, self-hosted) into `~/.claude/` — preserving **short names**, using **native live-reload**, and working with whatever git auth the dev already has.
 
-Installable via npm; daily invocation via `npx ccpp sync`.
+Distributed as a versioned tarball on the [GitHub Releases](https://github.com/mihai-valentin/ccpp/releases) page. After install, daily invocation is just `ccpp sync`.
 
 ## Install
 
-```bash
-# Global install — once per machine
-npm i -g ccpp
+ccpp ships as an `npm`-installable tarball attached to each GitHub Release. There's nothing on the npm registry — pull the tarball directly from the release URL:
 
-# Or ad-hoc via npx — no install required
-npx ccpp --help
+```bash
+# Pin to a specific version (recommended — reproducible)
+npm i -g https://github.com/mihai-valentin/ccpp/releases/download/v0.2.2/ccpp-0.2.2.tgz
+
+# Verify it landed on PATH
+ccpp --version
 ```
 
-Requirements:
+To upgrade, re-run the same command with a newer tag. Browse [`/releases`](https://github.com/mihai-valentin/ccpp/releases) for the full version history and per-release notes.
+
+### Alternative: install from source
+
+```bash
+git clone https://github.com/mihai-valentin/ccpp.git
+cd ccpp
+npm install
+npm run build
+npm i -g .
+```
+
+Useful when you want to track `master` or contribute. Slower than the tarball install — builds locally — but exact same end state.
+
+### Requirements
 
 - Node.js ≥ 20
 - A working `git` on your `$PATH` (ccpp delegates auth to whatever you already have configured — SSH agent, credential helper, `gh auth login`)
+
+### One-shot run without a global install
+
+```bash
+# Download + run a single command without persisting anything on PATH:
+npx --yes https://github.com/mihai-valentin/ccpp/releases/download/v0.2.2/ccpp-0.2.2.tgz --help
+```
+
+This re-downloads on every invocation, so it's only useful for trying ccpp once. For daily use, install globally as above.
 
 ## Quick Start
 
@@ -33,7 +58,7 @@ In a fresh working directory, run `ccpp install` with no URL. On a TTY, this lau
 
 ```bash
 mkdir my-ccpp && cd my-ccpp
-npx ccpp install
+ccpp install
 ```
 
 The wizard only runs on the very first invocation (no `ccpp.config.json` yet). Once you've got one, add further sources with the explicit form below.
@@ -43,27 +68,27 @@ The wizard only runs on the very first invocation (no `ccpp.config.json` yet). O
 ```bash
 # 1. (optional) Create ccpp.config.json explicitly. `ccpp install <url>` will
 #    create it on first use too — no separate init step required.
-npx ccpp init
+ccpp init
 
 # 2. Install one or more source repos (private or public)
-npx ccpp install git@bitbucket.org:your-org/ai-plugins.git
-npx ccpp install https://github.com/your-org/claude-plugins.git
+ccpp install git@bitbucket.org:your-org/ai-plugins.git
+ccpp install https://github.com/your-org/claude-plugins.git
 
 # 2a. (optional) pin to a tag, branch, or commit via the @<ref> shorthand
-npx ccpp install git@bitbucket.org:your-org/ai-plugins.git@v1.0.0
-npx ccpp install https://github.com/your-org/claude-plugins.git@deadbeef
+ccpp install git@bitbucket.org:your-org/ai-plugins.git@v1.0.0
+ccpp install https://github.com/your-org/claude-plugins.git@deadbeef
 
 # 2b. (optional) hands-off install — per-source auto-update, skip every prompt for this run
-npx ccpp install git@bitbucket.org:your-org/ai-plugins.git --prefer-latest --yes
+ccpp install git@bitbucket.org:your-org/ai-plugins.git --prefer-latest --yes
 
 # 3. Later — sync all sources to the commit pinned in ccpp.lock.json (with a diff-preview prompt)
-npx ccpp sync
+ccpp sync
 
 # 4. See what's installed
-npx ccpp list
+ccpp list
 
 # 5. Remove a source
-npx ccpp uninstall ai-plugins
+ccpp uninstall ai-plugins
 ```
 
 ### Where the config lives
@@ -79,7 +104,7 @@ Default for `ccpp init` and `ccpp install` is **user-scoped** (#4). This makes t
 
 ```bash
 # Team-share: ccpp.config.json + ccpp.lock.json land in the repo, ready to commit
-npx ccpp install git@bitbucket.org:your-org/ai-plugins.git --project
+ccpp install git@bitbucket.org:your-org/ai-plugins.git --project
 ```
 
 ## How it works
@@ -199,19 +224,19 @@ For a deeper walkthrough of the three trust dimensions, see [`docs/auto-update.m
 One shared Bitbucket/GitLab repo of in-house skills. Each teammate runs:
 
 ```bash
-npx ccpp install git@bitbucket.org:your-org/ai-plugins.git
+ccpp install git@bitbucket.org:your-org/ai-plugins.git
 ```
 
-…and `npx ccpp sync` after each `git pull` of the manifest-owning repo.
+…and `ccpp sync` after each `git pull` of the manifest-owning repo.
 
 ### Multi-source setup
 
 Combine an in-house repo with a public one. `ccpp.config.json` holds both; `ccpp sync` resolves all of them in one pass.
 
 ```bash
-npx ccpp install git@bitbucket.org:your-org/internal.git
-npx ccpp install https://github.com/anthropic-labs/claude-code-tools.git
-npx ccpp sync
+ccpp install git@bitbucket.org:your-org/internal.git
+ccpp install https://github.com/anthropic-labs/claude-code-tools.git
+ccpp sync
 ```
 
 ### Ad-hoc one-off install
@@ -219,7 +244,7 @@ npx ccpp sync
 Try a public plugin repo without committing it to the project manifest:
 
 ```bash
-npx ccpp install https://github.com/example/some-plugin.git --scratch
+ccpp install https://github.com/example/some-plugin.git --scratch
 ```
 
 `--scratch` materialises into a throw-away sandbox under `~/.ccpp/scratch/` and never touches `ccpp.config.json` / `ccpp.lock.json`.
@@ -242,7 +267,7 @@ If two sources both define `/git-commit`:
 - **In a non-interactive context (CI, piped stdin, `--quiet`):** ccpp refuses the install and exits with code `3`. Pre-declare the winner to avoid the prompt:
 
 ```bash
-npx ccpp install <url> --prefer
+ccpp install <url> --prefer
 ```
 
 `--prefer` means "every collision this install produces resolves in this source's favour."
@@ -253,7 +278,7 @@ ccpp caches source clones under `${CCPP_CACHE:-~/.ccpp/cache}`. Nuke it if somet
 
 ```bash
 rm -rf ~/.ccpp/cache
-npx ccpp sync
+ccpp sync
 ```
 
 ### Hook not firing
