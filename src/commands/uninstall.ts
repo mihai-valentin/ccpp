@@ -5,7 +5,7 @@ import { UserError } from '../lib/errors.js';
 import { pathExists } from '../lib/fsutil.js';
 import { parseRepoUrl } from '../lib/git.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
-import { dim, green } from '../lib/term.js';
+import { dim, green, yellow } from '../lib/term.js';
 import type { Lockfile } from '../lib/types.js';
 import { type ResolvedCommon, log } from './shared.js';
 
@@ -72,25 +72,41 @@ export async function runUninstall(opts: RunUninstallOpts): Promise<void> {
 
   // 5. Best-effort rename files to .bak.<ts>. Failures here leave the lockfile
   //    consistent (files are no longer tracked); user manually deletes leftovers.
+  //
+  //    `removed` is every dropped lockfile entry. `backups` is the subset whose
+  //    file existed on disk and got renamed; `missing` is the subset whose file
+  //    was already gone (typical when claudeHome was a tmp dir that has since
+  //    been cleaned up — the entry was dangling). Surfacing `missing` lets the
+  //    user notice that the lockfile had drifted from disk reality.
   const removed: string[] = [];
   const backups: string[] = [];
+  const missing: string[] = [];
   for (const dest of destinations) {
     if (await pathExists(dest)) {
       const backupPath = `${dest}.bak.${backupStamp()}`;
       await fs.rename(dest, backupPath);
       backups.push(backupPath);
+    } else {
+      missing.push(dest);
     }
     removed.push(dest);
   }
 
   if (opts.json) {
-    process.stdout.write(`${JSON.stringify({ source: target, removed, backups })}\n`);
+    process.stdout.write(`${JSON.stringify({ source: target, removed, backups, missing })}\n`);
     return;
   }
-  log(
-    `${green('✓')} uninstalled ${target} — ${removed.length} file(s) removed, ${backups.length} backup(s) kept`,
-    opts,
-  );
+  const summary =
+    missing.length === 0
+      ? `${removed.length} file(s) removed, ${backups.length} backup(s) kept`
+      : `${removed.length} entry/entries pruned (${backups.length} backed up, ${missing.length} already gone)`;
+  log(`${green('✓')} uninstalled ${target} — ${summary}`, opts);
+  if (missing.length > 0) {
+    log(
+      `  ${yellow('!')} ${missing.length} lockfile entry/entries pointed at paths no longer on disk — likely a stale --claude-home from an earlier run`,
+      opts,
+    );
+  }
   for (const bak of backups) log(`  ${dim(bak)}`, opts);
 }
 

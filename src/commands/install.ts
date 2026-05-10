@@ -33,7 +33,12 @@ import {
   runInstallWizard,
   summarizeInstalledTargets,
 } from './install-wizard.js';
-import { type ResolvedCommon, log, resolveSourceUrlAndRef } from './shared.js';
+import {
+  type ResolvedCommon,
+  log,
+  resolveSourceUrlAndRef,
+  warnIfTransientClaudeHome,
+} from './shared.js';
 
 /* -------------------- types -------------------- */
 
@@ -128,6 +133,7 @@ function validateInstallFlags(opts: InstallFlags, hasUrl: boolean): void {
  */
 export async function runInstall(opts: RunInstallOpts): Promise<void> {
   validateInstallFlags(opts, true);
+  warnIfTransientClaudeHome(opts);
   const { url, ref } = resolveSourceUrlAndRef(opts.rawUrl, opts.ref);
 
   let existing: CcppConfig | null = null;
@@ -179,6 +185,7 @@ export async function runInstall(opts: RunInstallOpts): Promise<void> {
  */
 export async function runInstallInteractive(opts: RunInstallInteractiveOpts): Promise<void> {
   validateInstallFlags(opts, false);
+  warnIfTransientClaudeHome(opts);
   if (await configExists(opts.configPath)) {
     throw new UserError(
       `ccpp.config.json already exists at ${opts.configPath}. To add another source, run \`ccpp install <url>\`; to edit settings, use \`ccpp config\`.`,

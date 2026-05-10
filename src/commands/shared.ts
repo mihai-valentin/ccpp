@@ -1,10 +1,10 @@
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, resolve, sep } from 'node:path';
 import { CONFIG_FILENAME } from '../lib/config.js';
 import { UserError } from '../lib/errors.js';
 import { LOCKFILE_FILENAME } from '../lib/lockfile.js';
-import { disableColor } from '../lib/term.js';
+import { disableColor, yellow } from '../lib/term.js';
 import { splitUrlRef } from '../lib/url.js';
 
 /**
@@ -89,6 +89,38 @@ export function commonPaths(opts: CommonOpts): ResolvedCommon {
 /** Write `line` to stdout unless `--quiet` is set. */
 export function log(line: string, common: Pick<ResolvedCommon, 'quiet'>): void {
   if (!common.quiet) process.stdout.write(`${line}\n`);
+}
+
+/**
+ * Returns a warning message when `claudeHome` lies under the OS tmpdir but
+ * `lockfilePath` does not — the combination that creates dangling lockfile
+ * entries pointing at `/tmp/...` destinations once the tmp dir is cleaned up.
+ *
+ * Caller is expected to write to stderr (not throw) — this is advisory, not
+ * fatal. Returns null when the combination is safe (both under tmpdir, both
+ * persistent, etc.).
+ */
+export function detectTransientClaudeHomeMismatch(
+  claudeHome: string,
+  lockfilePath: string,
+): string | null {
+  const tmp = tmpdir();
+  const inTmp = (p: string) => p === tmp || p.startsWith(`${tmp}${sep}`);
+  if (!inTmp(claudeHome) || inTmp(lockfilePath)) return null;
+  return `${yellow('!')} --claude-home is in a tmpdir (${claudeHome}) but the lockfile is persistent (${lockfilePath}). The lockfile will record destinations that vanish once the tmp dir is cleaned. Consider passing --config and --lockfile under the same tmp tree, or set CCPP_HOME.`;
+}
+
+/**
+ * Print {@link detectTransientClaudeHomeMismatch} to stderr if it triggers.
+ * Accepts a loose shape so callers with their own opt struct (e.g. runSync)
+ * don't need a {@link ResolvedCommon} to call it.
+ */
+export function warnIfTransientClaudeHome(opts: {
+  claudeHome: string;
+  lockfilePath: string;
+}): void {
+  const msg = detectTransientClaudeHomeMismatch(opts.claudeHome, opts.lockfilePath);
+  if (msg !== null) process.stderr.write(`${msg}\n`);
 }
 
 /**

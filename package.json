@@ -1,6 +1,6 @@
 {
   "name": "ccpp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Claude Code skill, slash-command, and subagent distribution from any git host — public or private — with short names, live reload, lockfile-pinned.",
   "license": "MIT",
   "author": "Mihai Valentin",

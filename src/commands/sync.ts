@@ -15,6 +15,7 @@ import { type ParseManifestResult, parseManifest } from '../lib/manifest.js';
 import { effectiveAutoAccept, effectivePolicy } from '../lib/policy.js';
 import { dim, formatShortSha, green, promptYesNo, yellow } from '../lib/term.js';
 import type { Conflict, Lockfile } from '../lib/types.js';
+import { warnIfTransientClaudeHome } from './shared.js';
 
 export type SyncOverride = SyncPolicy;
 
@@ -109,6 +110,7 @@ export function resolveOverride(flags: SyncOverrideFlags): SyncOverride | undefi
  * hook-triggered syncs must never block a Claude Code session.
  */
 export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
+  warnIfTransientClaudeHome(opts);
   const config = await readConfig(opts.configPath).catch((err: Error) => {
     throw new UserError(err.message);
   });

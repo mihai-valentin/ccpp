@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-05-10
+
+### Bug fixes
+
+- **`ccpp uninstall` now distinguishes pruned lockfile entries from disk renames.** Previously the summary read `N file(s) removed, M backup(s) kept` even when destinations were missing on disk — typically the case when a previous install used a `--claude-home /tmp/...` that has since been cleaned. The pruned-entry count was indistinguishable from the renamed-file count, so the user could not tell that the lockfile had drifted from disk reality. Now the message reads `N entry/entries pruned (M backed up, K already gone)` plus a `!` warning when `K > 0`. JSON output gains a `missing` array alongside `removed` and `backups`.
+- **Warn on dangling-entry-prone `--claude-home` / lockfile combinations.** `ccpp install` and `ccpp sync` now print a stderr warning when `--claude-home` is in the OS tmpdir but the lockfile is persistent (default `~/.ccpp/ccpp.lock.json`). That combination records destinations that vanish once the tmp dir is cleaned, leaving stale lockfile entries pointing at non-existent paths.
+
 ## [0.2.2] - 2026-05-10
 
 The OSS-readiness release. Closes every high-severity finding from the v0.2.1 internal code review and lands a substantial architectural cleanup. No breaking changes for existing repos with `./ccpp.config.json` checked in.

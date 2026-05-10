@@ -16,7 +16,7 @@ ccpp ships as an `npm`-installable tarball attached to each GitHub Release. Ther
 
 ```bash
 # Pin to a specific version (recommended — reproducible)
-npm i -g https://github.com/mihai-valentin/ccpp/releases/download/v0.2.2/ccpp-0.2.2.tgz
+npm i -g https://github.com/mihai-valentin/ccpp/releases/download/v0.2.3/ccpp-0.2.3.tgz
 
 # Verify it landed on PATH
 ccpp --version
@@ -45,7 +45,7 @@ Useful when you want to track `master` or contribute. Slower than the tarball in
 
 ```bash
 # Download + run a single command without persisting anything on PATH:
-npx --yes https://github.com/mihai-valentin/ccpp/releases/download/v0.2.2/ccpp-0.2.2.tgz --help
+npx --yes https://github.com/mihai-valentin/ccpp/releases/download/v0.2.3/ccpp-0.2.3.tgz --help
 ```
 
 This re-downloads on every invocation, so it's only useful for trying ccpp once. For daily use, install globally as above.
@@ -320,13 +320,13 @@ Test layout — unit tests live next to the source (`src/**/*.test.ts`) and CLI 
 
 ### Test coverage
 
-Run with `npm run coverage` (uses `@vitest/coverage-v8`). Headline numbers as of v0.2.2:
+Run with `npm run coverage` (uses `@vitest/coverage-v8`). Headline numbers as of v0.2.3:
 
 ```
-statements  61.27%   branches  80.08%   functions  81.70%   lines  61.27%
+statements  62.58%   branches  79.60%   functions  82.84%   lines  62.58%
 ```
 
-The 61% statements/lines figure is artificially low because `src/cli.ts` and several command modules are exercised end-to-end via subprocess (`node dist/cli.cjs` spawned from `tests/cli.test.ts` and `tests/cli-config.test.ts`); v8 in-process coverage doesn't trace subprocess execution. The lib layer (`src/lib/`) sits at **84% lines** in-process, with seven modules at 100% (`diff`, `errors`, `iso`, `layout`, `plan`, `policy`, `url`) and the remainder above 87% — so **branch coverage at 80%** is the most representative single number. The HTML report at `coverage/index.html` shows per-file detail.
+The 62% statements/lines figure is artificially low because `src/cli.ts` and several command modules are exercised end-to-end via subprocess (`node dist/cli.cjs` spawned from `tests/cli.test.ts` and `tests/cli-config.test.ts`); v8 in-process coverage doesn't trace subprocess execution. The lib layer (`src/lib/`) sits at **84% lines** in-process, with seven modules at 100% (`diff`, `errors`, `iso`, `layout`, `plan`, `policy`, `url`) and the remainder above 87% — so **branch coverage at 80%** is the most representative single number. The HTML report at `coverage/index.html` shows per-file detail.
 
 Additional opt-in test layers:
 
