@@ -32,6 +32,9 @@ export function parseRepoUrl(url: string): ParsedRepoUrl {
   }
 
   if (!trimmed.includes('://')) {
+    // SCP-style git URL: `<user>@<host>:<path>`, e.g. `git@github.com:org/repo.git`.
+    // Captured groups: 1=user (unused), 2=host, 3=path. The colon is the
+    // separator — a real URL would use `://` after the scheme.
     const scp = /^([^@\s]+)@([^:\s]+):(.+)$/.exec(trimmed);
     if (scp) {
       const host = scp[2]!;

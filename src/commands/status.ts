@@ -12,6 +12,8 @@ import { bold, dim, formatShortSha, formatTable, green, red, yellow } from '../l
 import type { Lockfile } from '../lib/types.js';
 
 const DEFAULT_RECENT_LIMIT = 5;
+/** Max characters of an error message shown in compact status output. */
+const ERROR_SUMMARY_LEN = 80;
 
 export interface RunStatusOpts {
   configPath: string;
@@ -62,7 +64,7 @@ function classify(
   }
   if (!last) return { status: 'up-to-date' };
   if (last.outcome === 'error') {
-    return { status: 'error', detail: last.error?.slice(0, 80) ?? 'unknown error' };
+    return { status: 'error', detail: last.error?.slice(0, ERROR_SUMMARY_LEN) ?? 'unknown error' };
   }
   if (last.outcome === 'skipped') {
     return { status: 'skipped', detail: 'autoAccept=false or user-declined' };
@@ -167,10 +169,11 @@ export function emitRecentEvents(report: StatusReport, write: WriteLine = defaul
     const summary = e.changeset
       ? `+${e.changeset.added}/~${e.changeset.modified}/-${e.changeset.removed}`
       : e.error
-        ? e.error.slice(0, 60)
+        ? e.error.slice(0, ERROR_SUMMARY_LEN)
         : '';
     const source = e.sourceUrl ? ` ${dim(e.sourceUrl)}` : '';
-    write(`${`  ${icon} ${e.timestamp}  ${e.trigger}${source}  ${summary}\n`.trimEnd()}\n`);
+    const line = `  ${icon} ${e.timestamp}  ${e.trigger}${source}  ${summary}`;
+    write(`${line.trimEnd()}\n`);
   }
 }
 

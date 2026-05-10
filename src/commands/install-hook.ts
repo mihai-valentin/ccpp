@@ -104,6 +104,10 @@ function shellQuote(s: string): string {
 }
 
 function makeCcppBlock(scriptPath: string): SessionStartBlock {
+  // Matcher is the union of the three SessionStart sub-events Claude Code
+  // emits: `startup` (fresh session), `resume` (continued from history),
+  // and `clear` (after /clear). Syncing on all three keeps ~/.claude/
+  // up to date whichever way the user enters a session.
   return {
     matcher: 'startup|resume|clear',
     hooks: [{ type: 'command', command: `bash ${shellQuote(scriptPath)}` }],

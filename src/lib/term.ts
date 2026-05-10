@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline';
 
+/** ANSI Control Sequence Introducer — the `ESC [` prefix every SGR escape starts with. */
 const CSI = '\x1b[';
 
 function colorEnabled(): boolean {
@@ -8,10 +9,18 @@ function colorEnabled(): boolean {
   return Boolean(process.stdout.isTTY);
 }
 
+/**
+ * Wrap a string in an SGR (Select Graphic Rendition) pair. The returned
+ * function re-evaluates `colorEnabled()` on every call (rather than at
+ * module-load time) so `disableColor()` and tests that mutate
+ * `process.env.CCPP_NO_COLOR` after import take effect immediately.
+ */
 function wrap(open: string, close: string): (s: string) => string {
   return (s: string) => (colorEnabled() ? `${CSI}${open}m${s}${CSI}${close}m` : s);
 }
 
+// SGR codes — `<open>m...<close>m`. 30-37 = foreground colors; 39 = default
+// foreground. 1 = bold, 2 = dim, 22 = normal-intensity (closes both).
 export const green = wrap('32', '39');
 export const yellow = wrap('33', '39');
 export const red = wrap('31', '39');
@@ -123,6 +132,13 @@ export function promptLine(message: string, opts: { defaultValue?: string } = {}
 }
 
 /**
+ * Default cap on retries for {@link promptChoice}. Three is enough to
+ * recover from a typo without livelocking on a non-interactive stdin
+ * that's stuck on EOF.
+ */
+const MAX_PROMPT_ATTEMPTS = 3;
+
+/**
  * Prompt the user to pick one of `choices`. Accepts either the numeric index
  * (1-based, as shown) or the literal choice string. Empty input selects
  * `defaultValue`. Invalid input retries up to `maxAttempts` times; on
@@ -132,7 +148,7 @@ export async function promptChoice<T extends string>(
   message: string,
   choices: readonly T[],
   defaultValue: T,
-  maxAttempts = 3,
+  maxAttempts = MAX_PROMPT_ATTEMPTS,
 ): Promise<T> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const list = choices

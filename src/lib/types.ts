@@ -169,7 +169,7 @@ export interface LockSourceEntry {
 export interface LockInstalledEntry {
   /** URL of the source this file came from. */
   sourceUrl: string;
-  /** Path of the file within the source repo (relative to its root). */
+  /** Path of the file within the source repo, relative to `ResolvedManifest.sourceDir` (the clone root). */
   sourcePath: string;
   /** SHA of the source at the time of install, for drift detection. */
   sourceSha: string;

@@ -87,5 +87,9 @@ async function rotate(logPath: string): Promise<void> {
   const entries = await readSyncLog(undefined, logPath);
   const keep = entries.slice(-TRIM_TO_ENTRIES);
   const content = keep.length === 0 ? '' : `${keep.map((e) => JSON.stringify(e)).join('\n')}\n`;
+  // Non-atomic on purpose — sync.log is best-effort logging, not lockfile
+  // state. A SIGINT mid-rotate truncates the file, which is acceptable
+  // (worst case: one run's recent events are lost). The atomic-write
+  // helper would add I/O cost to a hot path on every >1MB log file.
   await fs.writeFile(logPath, content);
 }

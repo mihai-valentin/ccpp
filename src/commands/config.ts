@@ -100,7 +100,7 @@ function emitGet(config: CcppConfig, key: string, opts: RunConfigOpts): void {
     return;
   }
   if (value === undefined) {
-    process.stdout.write(`${dim('(unset)')}\n`);
+    process.stdout.write(`${formatValue(value, { dim: true })}\n`);
     return;
   }
   process.stdout.write(`${formatValue(value)}\n`);
@@ -133,8 +133,10 @@ function emitReset(opts: RunConfigOpts): void {
   }
 }
 
-function formatValue(value: unknown): string {
-  if (value === undefined || value === null) return '(unset)';
+function formatValue(value: unknown, opts: { dim?: boolean } = {}): string {
+  if (value === undefined || value === null) {
+    return opts.dim === true ? dim('(unset)') : '(unset)';
+  }
   if (typeof value === 'string') return value;
   return JSON.stringify(value);
 }

@@ -361,6 +361,9 @@ async function main(argv: string[]): Promise<void> {
       ),
   );
 
+  // cac convention: an empty command name is the catch-all for `ccpp` with
+  // no subcommand. Without this, bare `ccpp` exits silently instead of
+  // showing help.
   cli.command('', 'Show help').action(() => {
     cli.outputHelp();
   });

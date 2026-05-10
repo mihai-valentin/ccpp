@@ -380,7 +380,7 @@ export async function applyConfigSet(
 }
 
 /**
- * Reset a single key (if provided) or all v0.1.1 policy fields (if omitted).
+ * Reset a single key (if provided) or every policy field (if omitted).
  * Mutates `config` in place. Never touches `sources` / `preferredSources` / `version` / `scope`.
  * Throws on unknown keys.
  */
@@ -421,7 +421,7 @@ export function resetConfigValue(config: CcppConfig, key?: string): void {
 }
 
 /**
- * Flatten config into a list of {key, value, isDefault} entries covering all v0.1.1 keys
+ * Flatten config into a list of {key, value, isDefault} entries covering all top-level keys
  * plus a `sources.<url>.policy` row for every configured source (whether set or not).
  */
 export function listConfig(config: CcppConfig): ConfigEntry[] {

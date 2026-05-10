@@ -31,12 +31,15 @@ export interface WizardPlan {
 }
 
 /**
- * Walk the user through a first-time install. Returns a collected plan on
- * confirm, or `null` if the user aborts at the final summary. Risk
- * acknowledgements (`syncPolicy: latest`, `autoAccept: true`) are surfaced
- * inline with the same warning text as `ccpp config set`; declining either
- * loops back to the relevant prompt so the user can pick a safer value
- * without restarting from scratch.
+ * Walk the user through a first-time install. Risk acknowledgements
+ * (`syncPolicy: latest`, `autoAccept: true`) are surfaced inline with the
+ * same warning text as `ccpp config set`; declining either loops back to
+ * the relevant prompt so the user can pick a safer value without restarting
+ * from scratch.
+ *
+ * @returns the collected plan on confirm, or `null` when the user declines
+ *          at the final summary prompt. Callers should treat null as
+ *          "abort silently — exit 0, no config written".
  */
 export async function runInstallWizard(io: WizardIO): Promise<WizardPlan | null> {
   io.out(bold('ccpp — first-time setup'));
@@ -81,8 +84,9 @@ async function askUrl(io: WizardIO): Promise<string> {
     try {
       parseRepoUrl(url);
       return url;
-    } catch (err) {
-      io.out(`  ${yellow('!')} ${(err as Error).message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      io.out(`  ${yellow('!')} ${message}`);
     }
   }
 }
