@@ -43,6 +43,7 @@
     "dev": "tsup --watch",
     "test": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:install": "bash scripts/e2e-install.sh",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "prepack": "npm run build",

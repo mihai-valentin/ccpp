@@ -64,6 +64,13 @@ lint:
 smoke: build
 	@bash scripts/smoke.sh
 
+## e2e-install: Pack + install ccpp into an isolated node_modules, then run
+##              against the real ping-pong remote on GitHub. Requires SSH
+##              access to git@github.com. Skipped (exit 0) if SSH is unavailable.
+.PHONY: e2e-install
+e2e-install:
+	@bash scripts/e2e-install.sh
+
 ## pack-check: npm pack --dry-run. Confirms the published tarball's shape.
 .PHONY: pack-check
 pack-check: build
