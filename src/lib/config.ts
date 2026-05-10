@@ -1,13 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { writeFileAtomic } from './fsutil.js';
+import { isIsoTimestamp } from './iso.js';
 import { stableStringifyValue } from './json-stable.js';
-
-function isIsoTimestamp(s: string): boolean {
-  // Date.parse returns NaN for unparseable input. Round-trip check ensures the
-  // string was a real ISO-8601 timestamp, not a numeric/loose date string.
-  const parsed = Date.parse(s);
-  return !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 10) === s.slice(0, 10);
-}
 
 export const CONFIG_FILENAME = 'ccpp.config.json';
 

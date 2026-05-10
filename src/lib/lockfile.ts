@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import { writeFileAtomic } from './fsutil.js';
+import { isIsoTimestamp } from './iso.js';
 import { stableStringifyValue } from './json-stable.js';
 import type { LockInstalledEntry, LockSourceEntry, Lockfile } from './types.js';
 
@@ -133,10 +134,3 @@ function requireIsoTimestamp(v: unknown, field: string, path: string): void {
   }
 }
 
-function isIsoTimestamp(s: string): boolean {
-  // Date.parse returns NaN for unparseable input. Round-trip the date so
-  // we don't accept loose strings like "today" or "2026" — the year-month-day
-  // prefix must match what Date back-formats.
-  const parsed = Date.parse(s);
-  return !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 10) === s.slice(0, 10);
-}

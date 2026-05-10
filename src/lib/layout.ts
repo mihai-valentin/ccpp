@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 
 /**
  * Subdirectories under `~/.claude/` that ccpp manages — Claude Code's native
@@ -39,9 +39,13 @@ export function classifyDestination(
   claudeHome: string,
 ): { kind: ResourceKind; name: string } | null {
   const dirs = claudeDirs(claudeHome);
-  const commandsPrefix = `${dirs.commandsDir}/`;
-  const skillsPrefix = `${dirs.skillsDir}/`;
-  const agentsPrefix = `${dirs.agentsDir}/`;
+  // Use the platform separator (`path.sep`) for the prefix match — on Windows
+  // `join(claudeHome, 'commands')` produces `\` paths, and a hardcoded `/`
+  // prefix would never match. The regex on the inner split still tolerates
+  // both because some tests mix separators.
+  const commandsPrefix = `${dirs.commandsDir}${sep}`;
+  const skillsPrefix = `${dirs.skillsDir}${sep}`;
+  const agentsPrefix = `${dirs.agentsDir}${sep}`;
   if (destPath.startsWith(commandsPrefix)) {
     const name = destPath.slice(commandsPrefix.length).replace(/\.md$/, '');
     return { kind: 'commands', name };
