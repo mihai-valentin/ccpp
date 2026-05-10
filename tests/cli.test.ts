@@ -351,10 +351,10 @@ describe('exit codes', () => {
       const cacheRoot = join(scratch, 'cache');
       // Crucially: no `init` step. The previous behavior was to write only
       // the lockfile and silently fail to persist intent.
-      const { code } = await cli(
-        ['install', fx.url, '--claude-home', claudeHome],
-        { cwd: scratch, env: { CCPP_CACHE: cacheRoot } },
-      );
+      const { code } = await cli(['install', fx.url, '--claude-home', claudeHome], {
+        cwd: scratch,
+        env: { CCPP_CACHE: cacheRoot },
+      });
       expect(code).toBe(0);
 
       const cfg = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
@@ -383,20 +383,15 @@ describe('exit codes', () => {
       // helper's default would put it). The install therefore writes to
       // the *user-scope* path only — exactly the case the cwd-coupling
       // bug was about.
-      const installRes = await cli(
-        ['install', fx.url, '--claude-home', claudeHome],
-        {
-          cwd: scratch,
-          env: { CCPP_CACHE: cacheRoot, CCPP_HOME: userCcppHome },
-        },
-      );
+      const installRes = await cli(['install', fx.url, '--claude-home', claudeHome], {
+        cwd: scratch,
+        env: { CCPP_CACHE: cacheRoot, CCPP_HOME: userCcppHome },
+      });
       expect(installRes.code).toBe(0);
 
       // Confirm the project-scope path is empty and the user-scope path holds the config.
       await expect(fs.access(join(scratch, 'ccpp.config.json'))).rejects.toThrow();
-      const userCfg = JSON.parse(
-        await fs.readFile(join(userCcppHome, 'ccpp.config.json'), 'utf8'),
-      );
+      const userCfg = JSON.parse(await fs.readFile(join(userCcppHome, 'ccpp.config.json'), 'utf8'));
       expect(userCfg.sources.map((s: { url: string }) => s.url)).toEqual([fx.url]);
 
       // Now run `ccpp sync` from a totally different cwd that has no project
