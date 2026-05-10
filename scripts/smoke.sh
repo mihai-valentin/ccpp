@@ -32,6 +32,11 @@ CLAUDE_HOME="$TMP/claude"
 PROJECT="$TMP/project"
 
 export CCPP_CACHE="$TMP/cache"
+# Pin user-scope config + lockfile into the scratch tree so this smoke test
+# never touches the developer's real ~/.ccpp/. Required since v0.2.2's
+# user-scope default — without this the `ccpp init` step would find the
+# user's real config and refuse to overwrite.
+export CCPP_HOME="$TMP/ccpp-home"
 export GIT_CONFIG_GLOBAL=/dev/null
 export GIT_CONFIG_SYSTEM=/dev/null
 export NO_COLOR=1
@@ -78,7 +83,10 @@ say 'help'
 node "$CLI" --help | grep -q 'Exit codes:'
 
 say 'init'
-( cd "$PROJECT" && ccpp init --source "$URL" )
+# --project forces the team-share path (./ccpp.config.json) instead of the
+# v0.2.2 user-scope default. This smoke test exercises that workflow:
+# config + lockfile committed alongside the project tree.
+( cd "$PROJECT" && ccpp init --project --source "$URL" )
 test -f "$PROJECT/ccpp.config.json"
 
 say 'sync (fresh install)'
