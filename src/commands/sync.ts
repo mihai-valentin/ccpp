@@ -11,9 +11,9 @@ import { cloneOrUpdate } from '../lib/git.js';
 import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
 import { type SyncOutcome, type SyncTrigger, appendSyncLog } from '../lib/log.js';
-import { parseManifest } from '../lib/manifest.js';
+import { type ParseManifestResult, parseManifest } from '../lib/manifest.js';
 import { dim, formatShortSha, green, promptYesNo, yellow } from '../lib/term.js';
-import type { Conflict } from '../lib/types.js';
+import type { Conflict, Lockfile } from '../lib/types.js';
 
 export type SyncOverride = SyncPolicy;
 
@@ -138,178 +138,22 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
     throw new UserError(err.message);
   });
 
+  const ctx: SyncContext = {
+    opts,
+    config,
+    lockfile,
+    trigger: opts.trigger ?? 'manual',
+    autoAcceptEffective: opts.autoAccept === true || config.autoAccept === true,
+    isTTY: opts.isTTY ?? Boolean(process.stdin.isTTY),
+  };
+
   const perSource: SourceSyncReport[] = [];
   const allConflicts: Conflict[] = [];
-  const isTTY = opts.isTTY ?? Boolean(process.stdin.isTTY);
-  const autoAcceptEffective = opts.autoAccept === true || config.autoAccept === true;
-  const trigger: SyncTrigger = opts.trigger ?? 'manual';
 
   for (const source of config.sources) {
-    const policy = effectivePolicy(source, config, opts.override);
-    const priorSha = lockfile.sources[source.url]?.sha ?? null;
-
-    const cloneOpts: Parameters<typeof cloneOrUpdate>[1] = {};
-    if (source.ref) cloneOpts.ref = source.ref;
-
-    let synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
-    try {
-      synced = await cloneOrUpdate(source.url, cloneOpts);
-    } catch (err) {
-      await appendSyncLog(
-        {
-          timestamp: new Date().toISOString(),
-          trigger,
-          outcome: 'error',
-          sourceUrl: source.url,
-          error: (err as Error).message,
-        },
-        opts.logPath,
-      );
-      throw new EnvError(`${source.url}: ${(err as Error).message}`);
-    }
-
-    let manifest: Awaited<ReturnType<typeof parseManifest>>;
-    try {
-      manifest = await parseManifest(synced.localPath);
-    } catch (err) {
-      await appendSyncLog(
-        {
-          timestamp: new Date().toISOString(),
-          trigger,
-          outcome: 'error',
-          sourceUrl: source.url,
-          error: (err as Error).message,
-        },
-        opts.logPath,
-      );
-      throw new EnvError(`${source.url}: ${(err as Error).message}`);
-    }
-    for (const w of manifest.warnings) {
-      process.stderr.write(`! ${source.url}: ${w.message}\n`);
-    }
-
-    const changeset = await computeChangeset({
-      manifest,
-      sourceUrl: source.url,
-      sourceSha: synced.sha,
-      claudeHome: opts.claudeHome,
-      lockfile,
-    });
-
-    const applyStatus = await decideApply({
-      changeset,
-      source,
-      policy,
-      autoAcceptEffective,
-      json: opts.json,
-      quiet: opts.quiet,
-      verbose: opts.verbose === true,
-      confirm: opts.confirm,
-      isTTY,
-    });
-
-    const changesetCounts = {
-      added: changeset.added.length,
-      modified: changeset.modified.length,
-      removed: changeset.removed.length,
-    };
-
-    if (applyStatus === 'applied' || applyStatus === 'no-changes') {
-      const priorDests = Object.entries(lockfile.installed)
-        .filter(([, entry]) => entry.sourceUrl === source.url)
-        .map(([dest]) => dest);
-
-      const result = await applyManifest({
-        manifest,
-        sourceUrl: source.url,
-        sourceSha: synced.sha,
-        claudeHome: opts.claudeHome,
-        lockfile,
-        preferredSources: config.preferredSources ?? {},
-      });
-
-      lockfile.sources[source.url] = {
-        sha: synced.sha,
-        ref: synced.ref,
-        lastSync: new Date().toISOString(),
-      };
-
-      const current = new Set([...result.installed, ...result.updated, ...result.unchanged]);
-      const removed = priorDests.filter((p) => !current.has(p));
-
-      perSource.push({
-        url: source.url,
-        policy,
-        priorSha,
-        sha: synced.sha,
-        ref: synced.ref,
-        changeset,
-        applyStatus,
-        installed: result.installed,
-        updated: result.updated,
-        unchanged: result.unchanged,
-        removed,
-        conflicts: result.conflicts,
-        backups: result.backups,
-      });
-      allConflicts.push(...result.conflicts);
-
-      if (!opts.quiet && !opts.json) {
-        const priorShort = priorSha ? formatShortSha(priorSha) : '(new)';
-        const newShort = formatShortSha(synced.sha);
-        const suffix = applyStatus === 'no-changes' ? dim(' (up-to-date)') : '';
-        process.stdout.write(
-          `${green('✓')} ${source.url}  ${dim(`policy=${policy}`)}  SHA: ${priorShort} -> ${newShort}  (${result.installed.length} added, ${result.updated.length} modified, ${removed.length} removed)${suffix}\n`,
-        );
-      }
-
-      const outcome: SyncOutcome = result.conflicts.length > 0 ? 'error' : 'success';
-      await appendSyncLog(
-        {
-          timestamp: new Date().toISOString(),
-          trigger,
-          outcome,
-          sourceUrl: source.url,
-          changeset: changesetCounts,
-          ...(result.conflicts.length > 0 && {
-            error: `${result.conflicts.length} collision(s) unresolved`,
-          }),
-        },
-        opts.logPath,
-      );
-    } else {
-      // Skipped — leave lockfile.sources[url] untouched at priorSha.
-      perSource.push({
-        url: source.url,
-        policy,
-        priorSha,
-        sha: priorSha ?? synced.sha,
-        ref: synced.ref,
-        changeset,
-        applyStatus,
-        installed: [],
-        updated: [],
-        unchanged: [],
-        removed: [],
-        conflicts: [],
-        backups: [],
-      });
-
-      if (!opts.json) {
-        logSkip(source.url, policy, applyStatus, changeset, opts);
-      }
-
-      await appendSyncLog(
-        {
-          timestamp: new Date().toISOString(),
-          trigger,
-          outcome: 'skipped',
-          sourceUrl: source.url,
-          changeset: changesetCounts,
-        },
-        opts.logPath,
-      );
-    }
+    const report = await syncOneSource(source, ctx);
+    perSource.push(report);
+    allConflicts.push(...report.conflicts);
   }
 
   await writeLockfile(opts.lockfilePath, lockfile);
@@ -326,6 +170,244 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
 
   return report;
 }
+
+/* -------------------- per-source pipeline -------------------- */
+
+interface SyncContext {
+  opts: RunSyncOpts;
+  config: CcppConfig;
+  lockfile: Lockfile;
+  trigger: SyncTrigger;
+  autoAcceptEffective: boolean;
+  isTTY: boolean;
+}
+
+/**
+ * Drive one source through clone → parse → diff → decide → apply/skip.
+ * Returns the per-source report; collisions are also surfaced via
+ * `report.conflicts` so the caller can aggregate them after the loop.
+ */
+async function syncOneSource(
+  source: ConfigSource,
+  ctx: SyncContext,
+): Promise<SourceSyncReport> {
+  const policy = effectivePolicy(source, ctx.config, ctx.opts.override);
+  const priorSha = ctx.lockfile.sources[source.url]?.sha ?? null;
+
+  const { synced, manifest } = await cloneAndParseSource(source, ctx);
+
+  const changeset = await computeChangeset({
+    manifest,
+    sourceUrl: source.url,
+    sourceSha: synced.sha,
+    claudeHome: ctx.opts.claudeHome,
+    lockfile: ctx.lockfile,
+  });
+
+  const applyStatus = await decideApply({
+    changeset,
+    source,
+    policy,
+    autoAcceptEffective: ctx.autoAcceptEffective,
+    json: ctx.opts.json,
+    quiet: ctx.opts.quiet,
+    verbose: ctx.opts.verbose === true,
+    confirm: ctx.opts.confirm,
+    isTTY: ctx.isTTY,
+  });
+
+  if (applyStatus === 'applied' || applyStatus === 'no-changes') {
+    return await applySource(source, ctx, synced, manifest, changeset, applyStatus, priorSha, policy);
+  }
+  return await recordSkip(source, ctx, synced, changeset, applyStatus, priorSha, policy);
+}
+
+/**
+ * Clone (or fetch-update) the source, then parse its manifest. Logs and
+ * re-throws as EnvError on either failure — the two error paths used to be
+ * duplicated inline in runSync.
+ */
+async function cloneAndParseSource(
+  source: ConfigSource,
+  ctx: SyncContext,
+): Promise<{ synced: Awaited<ReturnType<typeof cloneOrUpdate>>; manifest: ParseManifestResult }> {
+  const cloneOpts: Parameters<typeof cloneOrUpdate>[1] = {};
+  if (source.ref) cloneOpts.ref = source.ref;
+
+  let synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
+  try {
+    synced = await cloneOrUpdate(source.url, cloneOpts);
+  } catch (err) {
+    await logSyncError(source.url, err, ctx);
+    throw new EnvError(`${source.url}: ${(err as Error).message}`);
+  }
+
+  let manifest: ParseManifestResult;
+  try {
+    manifest = await parseManifest(synced.localPath);
+  } catch (err) {
+    await logSyncError(source.url, err, ctx);
+    throw new EnvError(`${source.url}: ${(err as Error).message}`);
+  }
+  for (const w of manifest.warnings) {
+    process.stderr.write(`! ${source.url}: ${w.message}\n`);
+  }
+
+  return { synced, manifest };
+}
+
+/**
+ * Apply the manifest to `~/.claude/`, update the lockfile pin, log the
+ * outcome (success or collision), and assemble the per-source report.
+ */
+async function applySource(
+  source: ConfigSource,
+  ctx: SyncContext,
+  synced: Awaited<ReturnType<typeof cloneOrUpdate>>,
+  manifest: ParseManifestResult,
+  changeset: Changeset,
+  applyStatus: ApplyStatus,
+  priorSha: string | null,
+  policy: SyncPolicy,
+): Promise<SourceSyncReport> {
+  // Snapshot the destinations this source previously owned so we can
+  // compute "files removed from the manifest since last sync" after apply.
+  const priorDests = Object.entries(ctx.lockfile.installed)
+    .filter(([, entry]) => entry.sourceUrl === source.url)
+    .map(([dest]) => dest);
+
+  const result = await applyManifest({
+    manifest,
+    sourceUrl: source.url,
+    sourceSha: synced.sha,
+    claudeHome: ctx.opts.claudeHome,
+    lockfile: ctx.lockfile,
+    preferredSources: ctx.config.preferredSources ?? {},
+  });
+
+  ctx.lockfile.sources[source.url] = {
+    sha: synced.sha,
+    ref: synced.ref,
+    lastSync: new Date().toISOString(),
+  };
+
+  const current = new Set([...result.installed, ...result.updated, ...result.unchanged]);
+  const removed = priorDests.filter((p) => !current.has(p));
+
+  if (!ctx.opts.quiet && !ctx.opts.json) {
+    const priorShort = priorSha ? formatShortSha(priorSha) : '(new)';
+    const newShort = formatShortSha(synced.sha);
+    const suffix = applyStatus === 'no-changes' ? dim(' (up-to-date)') : '';
+    process.stdout.write(
+      `${green('✓')} ${source.url}  ${dim(`policy=${policy}`)}  SHA: ${priorShort} -> ${newShort}  (${result.installed.length} added, ${result.updated.length} modified, ${removed.length} removed)${suffix}\n`,
+    );
+  }
+
+  const outcome: SyncOutcome = result.conflicts.length > 0 ? 'error' : 'success';
+  await appendSyncLog(
+    {
+      timestamp: new Date().toISOString(),
+      trigger: ctx.trigger,
+      outcome,
+      sourceUrl: source.url,
+      changeset: changesetCounts(changeset),
+      ...(result.conflicts.length > 0 && {
+        error: `${result.conflicts.length} collision(s) unresolved`,
+      }),
+    },
+    ctx.opts.logPath,
+  );
+
+  return {
+    url: source.url,
+    policy,
+    priorSha,
+    sha: synced.sha,
+    ref: synced.ref,
+    changeset,
+    applyStatus,
+    installed: result.installed,
+    updated: result.updated,
+    unchanged: result.unchanged,
+    removed,
+    conflicts: result.conflicts,
+    backups: result.backups,
+  };
+}
+
+/**
+ * Build the per-source report for a skipped source — leaves the lockfile
+ * `sources` entry untouched at priorSha. Emits a human-readable skip line
+ * (unless --json) and a structured skip event to sync.log.
+ */
+async function recordSkip(
+  source: ConfigSource,
+  ctx: SyncContext,
+  synced: Awaited<ReturnType<typeof cloneOrUpdate>>,
+  changeset: Changeset,
+  applyStatus: ApplyStatus,
+  priorSha: string | null,
+  policy: SyncPolicy,
+): Promise<SourceSyncReport> {
+  if (!ctx.opts.json) {
+    logSkip(source.url, policy, applyStatus, changeset, ctx.opts);
+  }
+
+  await appendSyncLog(
+    {
+      timestamp: new Date().toISOString(),
+      trigger: ctx.trigger,
+      outcome: 'skipped',
+      sourceUrl: source.url,
+      changeset: changesetCounts(changeset),
+    },
+    ctx.opts.logPath,
+  );
+
+  return {
+    url: source.url,
+    policy,
+    priorSha,
+    sha: priorSha ?? synced.sha,
+    ref: synced.ref,
+    changeset,
+    applyStatus,
+    installed: [],
+    updated: [],
+    unchanged: [],
+    removed: [],
+    conflicts: [],
+    backups: [],
+  };
+}
+
+/** Append an `outcome: error` entry to sync.log. Used by the clone + parse paths. */
+async function logSyncError(sourceUrl: string, err: unknown, ctx: SyncContext): Promise<void> {
+  await appendSyncLog(
+    {
+      timestamp: new Date().toISOString(),
+      trigger: ctx.trigger,
+      outcome: 'error',
+      sourceUrl,
+      error: (err as Error).message,
+    },
+    ctx.opts.logPath,
+  );
+}
+
+function changesetCounts(changeset: Changeset): {
+  added: number;
+  modified: number;
+  removed: number;
+} {
+  return {
+    added: changeset.added.length,
+    modified: changeset.modified.length,
+    removed: changeset.removed.length,
+  };
+}
+
+/* -------------------- decision + presentation -------------------- */
 
 interface DecideApplyOpts {
   changeset: Changeset;
