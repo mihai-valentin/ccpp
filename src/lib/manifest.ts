@@ -345,8 +345,14 @@ async function assertDirectory(path: string): Promise<void> {
   let stat: Awaited<ReturnType<typeof fs.stat>>;
   try {
     stat = await fs.stat(path);
-  } catch {
-    throw new Error(`Source directory does not exist: ${path}`);
+  } catch (err) {
+    const errno = (err as NodeJS.ErrnoException).code;
+    if (errno === 'ENOENT') {
+      throw new Error(`Source directory does not exist: ${path}`);
+    }
+    // EACCES, EPERM, ELOOP, etc. — surface the real reason instead of
+    // mislabelling it as "does not exist".
+    throw new Error(`Cannot access source directory ${path}: ${(err as Error).message}`);
   }
   if (!stat.isDirectory()) {
     throw new Error(`Source path is not a directory: ${path}`);

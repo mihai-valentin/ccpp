@@ -33,7 +33,7 @@ export async function runUninstall(opts: RunUninstallOpts): Promise<void> {
   }
 
   const result = await removeFromLockfile({
-    name: target,
+    sourceUrl: target,
     claudeHome: opts.claudeHome,
     lockfile,
   });

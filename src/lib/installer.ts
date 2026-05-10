@@ -25,7 +25,7 @@ export interface ApplyManifestResult {
 
 export interface RemoveFromLockfileOptions {
   /** Source URL whose installed files should be removed. */
-  name: string;
+  sourceUrl: string;
   claudeHome: string;
   lockfile: Lockfile;
 }
@@ -96,10 +96,10 @@ export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyMa
 export async function removeFromLockfile(
   opts: RemoveFromLockfileOptions,
 ): Promise<RemoveFromLockfileResult> {
-  const target = opts.name;
+  const { sourceUrl } = opts;
   const toRemove: string[] = [];
   for (const [destPath, entry] of Object.entries(opts.lockfile.installed)) {
-    if (entry.sourceUrl === target) toRemove.push(destPath);
+    if (entry.sourceUrl === sourceUrl) toRemove.push(destPath);
   }
 
   const removed: string[] = [];
@@ -113,7 +113,7 @@ export async function removeFromLockfile(
     delete opts.lockfile.installed[destPath];
     removed.push(destPath);
   }
-  delete opts.lockfile.sources[target];
+  delete opts.lockfile.sources[sourceUrl];
 
   return { removed, backups };
 }
@@ -276,5 +276,8 @@ function lockEntry(item: PlannedFile, opts: ApplyManifestOptions, now: string): 
 }
 
 function backupStamp(): string {
-  return new Date().toISOString().replace(/:/g, '-');
+  // Append 4 hex chars of randomness so two backups in the same millisecond
+  // (e.g. parallel installs, or fast retries) don't collide on the same name.
+  const ts = new Date().toISOString().replace(/:/g, '-');
+  return `${ts}-${randomBytes(2).toString('hex')}`;
 }

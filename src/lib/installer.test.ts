@@ -450,7 +450,7 @@ describe('removeFromLockfile', () => {
     });
 
     const result = await removeFromLockfile({
-      name: 'https://x/one.git',
+      sourceUrl: 'https://x/one.git',
       claudeHome,
       lockfile,
     });
@@ -510,7 +510,7 @@ describe('removeFromLockfile', () => {
     await fs.rm(join(claudeHome, 'commands/hello.md'));
 
     const result = await removeFromLockfile({
-      name: 'https://x/one.git',
+      sourceUrl: 'https://x/one.git',
       claudeHome,
       lockfile,
     });

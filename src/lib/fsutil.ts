@@ -2,8 +2,19 @@ import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname } from 'node:path';
 
+/** Default file-size cap for {@link readFileSafe}. 50 MB — generous for any
+ * Claude Code skill/command/agent file shape, defensive against an adversarial
+ * source committing a multi-GB blob that would otherwise be slurped into RAM. */
+export const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024;
+
+export interface ReadFileSafeOpts {
+  /** Maximum size in bytes. Defaults to {@link DEFAULT_MAX_FILE_BYTES}. */
+  maxBytes?: number;
+}
+
 /**
- * Read file bytes, refusing to follow symlinks.
+ * Read file bytes, refusing to follow symlinks and refusing files above
+ * {@link ReadFileSafeOpts.maxBytes} (default 50 MB).
  *
  * Source repositories are partially-trusted input: a malicious source could
  * commit a symlink pointing at something outside the clone (e.g. `~/.ssh/id_rsa`
@@ -16,11 +27,17 @@ import { dirname } from 'node:path';
  *
  * Throws with the offending path named so users can diagnose adversarial sources.
  */
-export async function readFileSafe(path: string): Promise<Buffer> {
+export async function readFileSafe(path: string, opts: ReadFileSafeOpts = {}): Promise<Buffer> {
   const stat = await fs.lstat(path);
   if (stat.isSymbolicLink()) {
     throw new Error(
       `Refusing to read symlink: ${path}. ccpp does not follow symlinks from source repos — this would allow a source to leak files from elsewhere on the filesystem into ~/.claude/.`,
+    );
+  }
+  const maxBytes = opts.maxBytes ?? DEFAULT_MAX_FILE_BYTES;
+  if (stat.size > maxBytes) {
+    throw new Error(
+      `Refusing to read ${path}: file size ${stat.size} bytes exceeds ${maxBytes} byte limit. Pass a larger maxBytes to readFileSafe if this file is legitimately large.`,
     );
   }
   return fs.readFile(path);

@@ -48,6 +48,21 @@ describe('readFileSafe', () => {
   it('propagates ENOENT for a missing regular file (unchanged from fs.readFile)', async () => {
     await expect(readFileSafe(join(scratch, 'nope.txt'))).rejects.toThrow(/ENOENT|no such file/i);
   });
+
+  it('refuses files larger than maxBytes', async () => {
+    const path = join(scratch, 'big.bin');
+    await fs.writeFile(path, Buffer.alloc(1024)); // 1 KiB
+    await expect(readFileSafe(path, { maxBytes: 256 })).rejects.toThrow(
+      /exceeds 256 byte limit/,
+    );
+  });
+
+  it('reads files up to and including maxBytes', async () => {
+    const path = join(scratch, 'exact.bin');
+    await fs.writeFile(path, Buffer.alloc(256));
+    const bytes = await readFileSafe(path, { maxBytes: 256 });
+    expect(bytes.length).toBe(256);
+  });
 });
 
 describe('writeFileAtomic', () => {

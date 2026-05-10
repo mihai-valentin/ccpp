@@ -91,16 +91,43 @@ export type RunInstallInteractiveOpts = ResolvedCommon & InstallFlags;
 /* -------------------- runInstall (URL-arg path) -------------------- */
 
 /**
- * Handle `ccpp install <url>` — the explicit-URL form. Resolves any
- * `<url>@<ref>` shorthand against `--ref`, persists per-source policy
- * if `--prefer-latest` was passed, then runs the standard install pipeline.
+ * Validate the install-flag combination for a given mode. Centralizes the
+ * two flag rules so neither path silently drifts:
+ *   - When no <url> was passed, the wizard runs and rejects every flag that
+ *     only makes sense with an explicit URL (--ref, --prefer, --scratch,
+ *     --prefer-latest, --yes).
+ *   - When <url> was passed, --prefer-latest writes per-source policy and
+ *     --scratch skips the config write — the two are incompatible.
  */
-export async function runInstall(opts: RunInstallOpts): Promise<void> {
+function validateInstallFlags(opts: InstallFlags, hasUrl: boolean): void {
+  if (!hasUrl) {
+    if (
+      opts.ref !== undefined ||
+      opts.prefer === true ||
+      opts.scratch === true ||
+      opts.preferLatest === true ||
+      opts.yes === true
+    ) {
+      throw new UserError(
+        'ccpp install: --ref, --prefer, --scratch, --prefer-latest and --yes all require a <url> argument.',
+      );
+    }
+    return;
+  }
   if (opts.preferLatest === true && opts.scratch === true) {
     throw new UserError(
       'ccpp install: --prefer-latest writes per-source policy to ccpp.config.json and is incompatible with --scratch.',
     );
   }
+}
+
+/**
+ * Handle `ccpp install <url>` — the explicit-URL form. Resolves any
+ * `<url>@<ref>` shorthand against `--ref`, persists per-source policy
+ * if `--prefer-latest` was passed, then runs the standard install pipeline.
+ */
+export async function runInstall(opts: RunInstallOpts): Promise<void> {
+  validateInstallFlags(opts, true);
   const { url, ref } = resolveSourceUrlAndRef(opts.rawUrl, opts.ref);
 
   let existing: CcppConfig | null = null;
@@ -151,17 +178,7 @@ export async function runInstall(opts: RunInstallOpts): Promise<void> {
  * hint pointing at the non-interactive form.
  */
 export async function runInstallInteractive(opts: RunInstallInteractiveOpts): Promise<void> {
-  if (
-    opts.ref !== undefined ||
-    opts.prefer === true ||
-    opts.scratch === true ||
-    opts.preferLatest === true ||
-    opts.yes === true
-  ) {
-    throw new UserError(
-      'ccpp install: --ref, --prefer, --scratch, --prefer-latest and --yes all require a <url> argument.',
-    );
-  }
+  validateInstallFlags(opts, false);
   if (await configExists(opts.configPath)) {
     throw new UserError(
       `ccpp.config.json already exists at ${opts.configPath}. To add another source, run \`ccpp install <url>\`; to edit settings, use \`ccpp config\`.`,
