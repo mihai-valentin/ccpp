@@ -2,17 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { pathExists, readFileSafe } from './fsutil.js';
-import { CLAUDE_LAYOUT } from './layout.js';
-import type {
-  Agent,
-  Conflict,
-  LockInstalledEntry,
-  Lockfile,
-  PluginManifest,
-  ResolvedManifest,
-  Skill,
-  SlashCommand,
-} from './types.js';
+import { type PlannedFile, planFiles } from './plan.js';
+import type { Conflict, LockInstalledEntry, Lockfile, ResolvedManifest } from './types.js';
 
 export interface ApplyManifestOptions {
   manifest: ResolvedManifest;
@@ -44,141 +35,57 @@ export interface RemoveFromLockfileResult {
   backups: string[];
 }
 
-interface PlannedFile {
-  /** Short name used for collision-lookup (command, skill, or agent). */
-  name: string;
-  /** Absolute path on disk of the source file. */
-  sourceAbsolute: string;
-  /** Path of the file relative to the source repo root. */
-  sourceRelative: string;
-  /** Absolute destination path under claudeHome. */
-  destPath: string;
-}
-
 /**
  * Apply a parsed manifest to `<claudeHome>/` — write commands, skills, agents,
  * and lockfile entries. Non-destructive on conflict: returns a {@link Conflict}
  * list the caller surfaces to the user. Always backs up an existing file
  * whose bytes differ from what is about to be written.
  *
- * Atomicity: writes go through a two-phase staging tree. **Phase 1** reads
- * source bytes, classifies each plan item (skip / unchanged / write), and
- * stages every byte to write under `<claudeHome>/.ccpp-staging-<id>/`. If
- * any read or staging write fails, the whole staging tree is removed and
- * `~/.claude/` is left untouched. **Phase 2** renames each staged file into
- * place, backing up any pre-existing differing target to `.bak.<timestamp>`.
+ * Internal phases:
  *
- * Phase 2 is best-effort atomic per file (single `fs.rename` on the same
- * filesystem) but not cross-file transactional — a phase-2 failure midway
- * leaves earlier swaps committed. This is rare in practice (renames within
- * one filesystem rarely fail once the parent dir exists) and the user still
- * has the `.bak` files plus the staging tree (NOT cleaned on phase-2 failure)
- * for manual recovery.
+ *   1. {@link planFiles} (pure, in `lib/plan.ts`) — derive destination paths.
+ *   2. {@link preparePlan} — read source bytes, classify each plan item as
+ *      skip / unchanged / conflict / write. Lockfile entries for unchanged
+ *      files are recorded here.
+ *   3. {@link stagePlan} — stage every byte-to-write under
+ *      `<claudeHome>/.ccpp-staging-<id>/`. If any read or staging write fails,
+ *      the staging tree is removed and `~/.claude/` is left untouched.
+ *   4. {@link commitStaged} — atomic-rename each staged file into place,
+ *      backing up any pre-existing differing target to `.bak.<timestamp>`.
+ *      Mutates the lockfile as files commit.
  *
- * The in-memory `lockfile` is mutated as files commit in phase 2 — entries
- * for unchanged-but-tracked files are recorded in phase 1.
+ * Phase 4 is best-effort atomic per file (single `fs.rename` on the same
+ * filesystem) but not cross-file transactional — a phase-4 failure midway
+ * leaves earlier swaps committed. This is rare in practice once parent
+ * dirs exist; the user still has `.bak` files plus the staging tree (NOT
+ * cleaned on phase-4 failure) for manual recovery.
  */
 export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyManifestResult> {
-  const plan = planFiles(opts);
-  const result: ApplyManifestResult = {
-    installed: [],
-    updated: [],
-    unchanged: [],
-    conflicts: [],
-    backups: [],
-  };
-
+  const plan = planFiles(opts.manifest, opts.claudeHome);
   const now = new Date().toISOString();
 
-  // Phase 1 — classify and stage. `toCommit` is the sequence of files we
-  // need to swap into place in phase 2 (skipping conflicts and unchanged
-  // files, both of which need no on-disk write).
-  type StagedWrite = { item: PlannedFile; stagePath: string; destExists: boolean };
-  const toCommit: StagedWrite[] = [];
+  const prepared = await preparePlan(plan, opts, now);
 
-  const stagingId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
-  const stagingRoot = join(opts.claudeHome, `.ccpp-staging-${stagingId}`);
-
-  try {
-    for (const item of plan) {
-      const existingEntry = opts.lockfile.installed[item.destPath];
-      if (existingEntry && existingEntry.sourceUrl !== opts.sourceUrl) {
-        const preferred = opts.preferredSources?.[item.name];
-        if (preferred === opts.sourceUrl) {
-          // Incoming source explicitly preferred → fall through to write.
-        } else if (preferred === existingEntry.sourceUrl) {
-          // Existing source explicitly preferred → silently skip.
-          continue;
-        } else {
-          result.conflicts.push({
-            destPath: item.destPath,
-            currentSourceUrl: existingEntry.sourceUrl,
-            incomingSourceUrl: opts.sourceUrl,
-            name: item.name,
-          });
-          continue;
-        }
-      }
-
-      // readFileSafe refuses to follow symlinks — source repos are
-      // partially-trusted input and a symlink could redirect the read to
-      // anything on the filesystem, including files Claude Code shouldn't see.
-      const sourceBytes = await readFileSafe(item.sourceAbsolute);
-      const destExists = await pathExists(item.destPath);
-
-      if (destExists) {
-        const destBytes = await fs.readFile(item.destPath);
-        if (sourceBytes.equals(destBytes)) {
-          result.unchanged.push(item.destPath);
-          opts.lockfile.installed[item.destPath] = lockEntry(item, opts, now);
-          continue;
-        }
-      }
-
-      // Stage path mirrors the dest path under claudeHome so the eventual
-      // rename is on the same filesystem (cheap and atomic).
-      const rel = relative(opts.claudeHome, item.destPath);
-      const stagePath = join(stagingRoot, rel);
-      await fs.mkdir(dirname(stagePath), { recursive: true });
-      await fs.writeFile(stagePath, sourceBytes);
-      toCommit.push({ item, stagePath, destExists });
-    }
-  } catch (err) {
-    // Phase 1 failed — staging tree is the only side effect; clean it up so
-    // ~/.claude/ stays exactly as we found it.
-    await fs.rm(stagingRoot, { recursive: true, force: true });
-    throw err;
+  if (prepared.toWrite.length === 0) {
+    return {
+      installed: [],
+      updated: [],
+      unchanged: prepared.unchanged,
+      conflicts: prepared.conflicts,
+      backups: [],
+    };
   }
 
-  if (toCommit.length === 0) {
-    await fs.rm(stagingRoot, { recursive: true, force: true });
-    return result;
-  }
+  const staged = await stagePlan(prepared.toWrite, opts.claudeHome);
+  const committed = await commitStaged(staged, opts, now);
 
-  // Phase 2 — swap each staged file into place. On the same filesystem this
-  // is an atomic rename per file; cross-file atomicity is best-effort.
-  for (const { item, stagePath, destExists } of toCommit) {
-    await fs.mkdir(dirname(item.destPath), { recursive: true });
-    if (destExists) {
-      const backupPath = `${item.destPath}.bak.${backupStamp()}`;
-      await fs.rename(item.destPath, backupPath);
-      result.backups.push(backupPath);
-      await fs.rename(stagePath, item.destPath);
-      result.updated.push(item.destPath);
-    } else {
-      await fs.rename(stagePath, item.destPath);
-      result.installed.push(item.destPath);
-    }
-    opts.lockfile.installed[item.destPath] = lockEntry(item, opts, now);
-  }
-
-  // All staged files have been moved out by phase 2; the staging tree only
-  // contains empty parent directories at this point. `force: true` makes
-  // the cleanup tolerate a partial phase 2 (some entries already moved,
-  // some left over).
-  await fs.rm(stagingRoot, { recursive: true, force: true });
-
-  return result;
+  return {
+    installed: committed.installed,
+    updated: committed.updated,
+    unchanged: prepared.unchanged,
+    conflicts: prepared.conflicts,
+    backups: committed.backups,
+  };
 }
 
 /**
@@ -211,98 +118,162 @@ export async function removeFromLockfile(
   return { removed, backups };
 }
 
-function planFiles(opts: ApplyManifestOptions): PlannedFile[] {
-  const items: PlannedFile[] = [];
-  const seenDests = new Set<string>();
+/* -------------------- internal: prepare / stage / commit -------------------- */
 
-  for (const cmd of opts.manifest.standaloneCommands) {
-    pushCommand(items, seenDests, opts, cmd);
-  }
-  for (const skill of opts.manifest.standaloneSkills) {
-    pushSkill(items, seenDests, opts, skill);
-  }
-  for (const agent of opts.manifest.standaloneAgents) {
-    pushAgent(items, seenDests, opts, agent);
-  }
-  for (const plugin of opts.manifest.plugins) {
-    pushPluginContents(items, seenDests, opts, plugin);
-  }
-  return items;
+interface ToWriteItem {
+  item: PlannedFile;
+  sourceBytes: Buffer;
+  destExists: boolean;
 }
 
-function pushCommand(
-  items: PlannedFile[],
-  seenDests: Set<string>,
+interface StagedItem {
+  item: PlannedFile;
+  stagePath: string;
+  destExists: boolean;
+}
+
+interface PreparedPlan {
+  unchanged: string[];
+  conflicts: Conflict[];
+  toWrite: ToWriteItem[];
+}
+
+interface StagedPlan {
+  stagingRoot: string;
+  items: StagedItem[];
+}
+
+/**
+ * Phase 2 — classify each plan item by reading source bytes and comparing
+ * with the destination. Records lockfile entries for unchanged items
+ * (since they need no on-disk write but should still be tracked under the
+ * current source).
+ */
+async function preparePlan(
+  plan: PlannedFile[],
   opts: ApplyManifestOptions,
-  cmd: SlashCommand,
-): void {
-  const destPath = join(opts.claudeHome, CLAUDE_LAYOUT.commands, `${cmd.name}.md`);
-  if (seenDests.has(destPath)) return;
-  seenDests.add(destPath);
-  items.push({
-    name: cmd.name,
-    sourceAbsolute: cmd.sourceFile,
-    sourceRelative: relative(opts.manifest.sourceDir, cmd.sourceFile),
-    destPath,
-  });
+  now: string,
+): Promise<PreparedPlan> {
+  const result: PreparedPlan = { unchanged: [], conflicts: [], toWrite: [] };
+
+  for (const item of plan) {
+    const existingEntry = opts.lockfile.installed[item.destPath];
+    if (existingEntry && existingEntry.sourceUrl !== opts.sourceUrl) {
+      const preferred = opts.preferredSources?.[item.name];
+      if (preferred === opts.sourceUrl) {
+        // Incoming source explicitly preferred → fall through to write.
+      } else if (preferred === existingEntry.sourceUrl) {
+        // Existing source explicitly preferred → silently skip.
+        continue;
+      } else {
+        result.conflicts.push({
+          destPath: item.destPath,
+          currentSourceUrl: existingEntry.sourceUrl,
+          incomingSourceUrl: opts.sourceUrl,
+          name: item.name,
+        });
+        continue;
+      }
+    }
+
+    // readFileSafe refuses to follow symlinks — source repos are
+    // partially-trusted input and a symlink could redirect the read to
+    // anything on the filesystem, including files Claude Code shouldn't see.
+    const sourceBytes = await readFileSafe(item.sourceAbsolute);
+    const destExists = await pathExists(item.destPath);
+
+    if (destExists) {
+      const destBytes = await fs.readFile(item.destPath);
+      if (sourceBytes.equals(destBytes)) {
+        result.unchanged.push(item.destPath);
+        opts.lockfile.installed[item.destPath] = lockEntry(item, opts, now);
+        continue;
+      }
+    }
+
+    result.toWrite.push({ item, sourceBytes, destExists });
+  }
+
+  return result;
 }
 
-function pushPluginContents(
-  items: PlannedFile[],
-  seenDests: Set<string>,
+/**
+ * Phase 3 — stage every byte-to-write under
+ * `<claudeHome>/.ccpp-staging-<id>/`. The staging tree mirrors the dest
+ * tree under claudeHome so the eventual rename is on the same filesystem
+ * (cheap and atomic). On any failure during this phase, the staging tree
+ * is rm -rf'd and the error is re-thrown — `~/.claude/` is left untouched.
+ */
+async function stagePlan(
+  toWrite: ToWriteItem[],
+  claudeHome: string,
+): Promise<StagedPlan> {
+  const stagingId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
+  const stagingRoot = join(claudeHome, `.ccpp-staging-${stagingId}`);
+  const items: StagedItem[] = [];
+
+  try {
+    for (const { item, sourceBytes, destExists } of toWrite) {
+      const rel = relative(claudeHome, item.destPath);
+      const stagePath = join(stagingRoot, rel);
+      await fs.mkdir(dirname(stagePath), { recursive: true });
+      await fs.writeFile(stagePath, sourceBytes);
+      items.push({ item, stagePath, destExists });
+    }
+  } catch (err) {
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+    throw err;
+  }
+
+  return { stagingRoot, items };
+}
+
+/**
+ * Phase 4 — atomic-rename each staged file into place. On the same
+ * filesystem this is an atomic rename per file; cross-file atomicity is
+ * best-effort. Mutates the lockfile as files commit. The staging tree is
+ * removed on success; on partial failure it stays in place so the user
+ * can recover the staged content manually.
+ */
+async function commitStaged(
+  staged: StagedPlan,
   opts: ApplyManifestOptions,
-  plugin: PluginManifest,
-): void {
-  for (const cmd of plugin.commands) {
-    pushCommand(items, seenDests, opts, cmd);
+  now: string,
+): Promise<{ installed: string[]; updated: string[]; backups: string[] }> {
+  const out = {
+    installed: [] as string[],
+    updated: [] as string[],
+    backups: [] as string[],
+  };
+
+  for (const { item, stagePath, destExists } of staged.items) {
+    await fs.mkdir(dirname(item.destPath), { recursive: true });
+    if (destExists) {
+      const backupPath = `${item.destPath}.bak.${backupStamp()}`;
+      await fs.rename(item.destPath, backupPath);
+      out.backups.push(backupPath);
+      await fs.rename(stagePath, item.destPath);
+      out.updated.push(item.destPath);
+    } else {
+      await fs.rename(stagePath, item.destPath);
+      out.installed.push(item.destPath);
+    }
+    opts.lockfile.installed[item.destPath] = lockEntry(item, opts, now);
   }
-  for (const skill of plugin.skills) {
-    pushSkill(items, seenDests, opts, skill);
-  }
-  for (const agent of plugin.agents) {
-    pushAgent(items, seenDests, opts, agent);
-  }
+
+  // All staged files have been moved out by phase 4; the staging tree only
+  // contains empty parent directories at this point. `force: true` makes
+  // the cleanup tolerate a partial phase 4 (some entries already moved,
+  // some left over).
+  await fs.rm(staged.stagingRoot, { recursive: true, force: true });
+  return out;
 }
 
-function pushAgent(
-  items: PlannedFile[],
-  seenDests: Set<string>,
+function lockEntry(
+  item: PlannedFile,
   opts: ApplyManifestOptions,
-  agent: Agent,
-): void {
-  const destPath = join(opts.claudeHome, CLAUDE_LAYOUT.agents, `${agent.name}.md`);
-  if (seenDests.has(destPath)) return;
-  seenDests.add(destPath);
-  items.push({
-    name: agent.name,
-    sourceAbsolute: agent.sourceFile,
-    sourceRelative: relative(opts.manifest.sourceDir, agent.sourceFile),
-    destPath,
-  });
-}
-
-function pushSkill(
-  items: PlannedFile[],
-  seenDests: Set<string>,
-  opts: ApplyManifestOptions,
-  skill: Skill,
-): void {
-  const destRoot = join(opts.claudeHome, CLAUDE_LAYOUT.skills, skill.name);
-  for (const file of skill.files) {
-    const rel = relative(skill.sourceDir, file);
-    const destPath = join(destRoot, rel);
-    if (seenDests.has(destPath)) continue;
-    seenDests.add(destPath);
-    items.push({
-      name: skill.name,
-      sourceAbsolute: file,
-      sourceRelative: relative(opts.manifest.sourceDir, file),
-      destPath,
-    });
-  }
-}
-
-function lockEntry(item: PlannedFile, opts: ApplyManifestOptions, now: string): LockInstalledEntry {
+  now: string,
+): LockInstalledEntry {
   return {
     sourceUrl: opts.sourceUrl,
     sourcePath: item.sourceRelative,
