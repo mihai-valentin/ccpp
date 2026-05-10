@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { cac } from 'cac';
 import { type ConfigAction, runConfig } from './commands/config.js';
 import { runInit } from './commands/init.js';
@@ -16,14 +14,12 @@ import { CollisionError, EXIT, EnvError, UserError } from './lib/errors.js';
 import { LOCKFILE_FILENAME } from './lib/lockfile.js';
 import { red } from './lib/term.js';
 
-function readPkgVersion(): string {
-  try {
-    const raw = readFileSync(join(__dirname, '..', 'package.json'), 'utf8');
-    return (JSON.parse(raw) as { version: string }).version ?? '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
-}
+/**
+ * Inlined at build time by tsup's `define`. The runtime never reads
+ * package.json — no fs, no `__dirname`, works the same under CJS and ESM.
+ * See tsup.config.ts for the source of truth.
+ */
+declare const __VERSION__: string;
 
 function attachCommonOptions<T extends { option: (flag: string, desc: string) => T }>(cmd: T): T {
   cmd
@@ -219,7 +215,7 @@ function classifyAndExit(err: unknown): never {
 
 async function main(argv: string[]): Promise<void> {
   const cli = cac('ccpp');
-  const version = readPkgVersion();
+  const version = __VERSION__;
 
   attachCommonOptions(
     cli

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { promises as fs, constants as fsConstants } from 'node:fs';
 import { dirname } from 'node:path';
 
 /** Default file-size cap for {@link readFileSafe}. 50 MB — generous for any
@@ -19,28 +19,43 @@ export interface ReadFileSafeOpts {
  * Source repositories are partially-trusted input: a malicious source could
  * commit a symlink pointing at something outside the clone (e.g. `~/.ssh/id_rsa`
  * or `/etc/passwd`) and, if ccpp followed it, end up copying its contents into
- * `~/.claude/` — where Claude Code reads files during every session. The
- * manifest walker already skips symlinks at `readdir` time via `Dirent.isFile()`,
- * but this helper is the belt-and-suspenders check at the last possible moment:
- * right before the bytes are read. It also closes the narrow TOCTOU window in
- * which a regular file at walk time could turn into a symlink before the read.
+ * `~/.claude/` — where Claude Code reads files during every session.
+ *
+ * Implementation: opens the path with `O_NOFOLLOW`, which makes the kernel
+ * fail the open with `ELOOP` if the final path component is a symlink. This
+ * resolves the path, checks the type, and reads the bytes in a single
+ * atomic operation — there is no lstat-then-read window an attacker could
+ * race. Falls back to the lstat-style error for the symlink-rejection case
+ * so the message is consistent with what users see today.
  *
  * Throws with the offending path named so users can diagnose adversarial sources.
  */
 export async function readFileSafe(path: string, opts: ReadFileSafeOpts = {}): Promise<Buffer> {
-  const stat = await fs.lstat(path);
-  if (stat.isSymbolicLink()) {
-    throw new Error(
-      `Refusing to read symlink: ${path}. ccpp does not follow symlinks from source repos — this would allow a source to leak files from elsewhere on the filesystem into ~/.claude/.`,
-    );
-  }
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_FILE_BYTES;
-  if (stat.size > maxBytes) {
-    throw new Error(
-      `Refusing to read ${path}: file size ${stat.size} bytes exceeds ${maxBytes} byte limit. Pass a larger maxBytes to readFileSafe if this file is legitimately large.`,
-    );
+  let fd: fs.FileHandle;
+  try {
+    fd = await fs.open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
+      throw new Error(
+        `Refusing to read symlink: ${path}. ccpp does not follow symlinks from source repos — this would allow a source to leak files from elsewhere on the filesystem into ~/.claude/.`,
+      );
+    }
+    throw err;
   }
-  return fs.readFile(path);
+  try {
+    // Size check on the open fd (not a fresh stat) — same inode the read
+    // will operate on, so the size cannot drift between check and read.
+    const stat = await fd.stat();
+    if (stat.size > maxBytes) {
+      throw new Error(
+        `Refusing to read ${path}: file size ${stat.size} bytes exceeds ${maxBytes} byte limit. Pass a larger maxBytes to readFileSafe if this file is legitimately large.`,
+      );
+    }
+    return await fd.readFile();
+  } finally {
+    await fd.close().catch(() => {});
+  }
 }
 
 /**
