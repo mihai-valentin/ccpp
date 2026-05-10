@@ -9,7 +9,7 @@
 #      to the npm registry.
 #   2. Installs that tarball into an isolated `node_modules/` via `npm install`,
 #      exercising the bin-shim setup the user actually gets when they run
-#      `npm install -g ccpp` or `npx ccpp`.
+#      `npm install -g <release-tarball-url>` from a GitHub Release.
 #   3. Runs the resulting `ccpp` binary against the real `ccpp-test-pingpong`
 #      remote on GitHub (public repo, pulled over HTTPS — no auth needed).
 #   4. Asserts the full lifecycle: install → list → sync → uninstall.
