@@ -190,58 +190,47 @@ function validatePluginJson(raw: unknown, filePath: string): PluginJson {
   };
 }
 
-async function scanPluginCommands(pluginDir: string): Promise<SlashCommand[]> {
-  return scanCommandsDir(join(pluginDir, 'commands'));
-}
-
-async function scanStandaloneCommands(sourceDir: string): Promise<SlashCommand[]> {
-  return scanCommandsDir(join(sourceDir, 'commands'));
-}
-
-async function scanPluginAgents(pluginDir: string): Promise<Agent[]> {
-  return scanAgentsDir(join(pluginDir, 'agents'));
-}
-
-async function scanStandaloneAgents(sourceDir: string): Promise<Agent[]> {
-  return scanAgentsDir(join(sourceDir, 'agents'));
-}
-
-async function scanAgentsDir(dir: string): Promise<Agent[]> {
+/**
+ * Scan a directory of flat `.md` files. Used for both `commands/` and
+ * `agents/` — they have the same shape (flat dir, one .md per resource,
+ * basename = resource name). The returned items are sorted by name so
+ * test fixtures are deterministic.
+ */
+async function scanFlatMdDir<T extends { name: string; sourceFile: string }>(
+  dir: string,
+): Promise<T[]> {
   if (!(await pathExists(dir))) return [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  const agents: Agent[] = [];
+  const items: T[] = [];
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     if (!entry.name.endsWith('.md')) continue;
     const name = entry.name.slice(0, -'.md'.length);
-    agents.push({ name, sourceFile: join(dir, entry.name) });
+    items.push({ name, sourceFile: join(dir, entry.name) } as T);
   }
-  agents.sort((a, b) => a.name.localeCompare(b.name));
-  return agents;
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  return items;
 }
 
-async function scanCommandsDir(dir: string): Promise<SlashCommand[]> {
-  if (!(await pathExists(dir))) return [];
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  const commands: SlashCommand[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (!entry.name.endsWith('.md')) continue;
-    const name = entry.name.slice(0, -'.md'.length);
-    commands.push({ name, sourceFile: join(dir, entry.name) });
-  }
-  commands.sort((a, b) => a.name.localeCompare(b.name));
-  return commands;
-}
+const scanPluginCommands = (pluginDir: string): Promise<SlashCommand[]> =>
+  scanFlatMdDir<SlashCommand>(join(pluginDir, 'commands'));
+const scanStandaloneCommands = (sourceDir: string): Promise<SlashCommand[]> =>
+  scanFlatMdDir<SlashCommand>(join(sourceDir, 'commands'));
+const scanPluginAgents = (pluginDir: string): Promise<Agent[]> =>
+  scanFlatMdDir<Agent>(join(pluginDir, 'agents'));
+const scanStandaloneAgents = (sourceDir: string): Promise<Agent[]> =>
+  scanFlatMdDir<Agent>(join(sourceDir, 'agents'));
 
-async function scanPluginSkills(pluginDir: string): Promise<Skill[]> {
-  return scanSkillsDir(join(pluginDir, 'skills'));
-}
+const scanPluginSkills = (pluginDir: string): Promise<Skill[]> =>
+  scanSkillsDir(join(pluginDir, 'skills'));
+const scanStandaloneSkills = (sourceDir: string): Promise<Skill[]> =>
+  scanSkillsDir(join(sourceDir, 'skills'));
 
-async function scanStandaloneSkills(sourceDir: string): Promise<Skill[]> {
-  return scanSkillsDir(join(sourceDir, 'skills'));
-}
-
+/**
+ * Scan a `skills/` directory: each immediate sub-directory containing a
+ * `SKILL.md` is a skill. Skills are dir-shaped (not flat .md files), which
+ * is why they don't share scanFlatMdDir.
+ */
 async function scanSkillsDir(skillsRoot: string): Promise<Skill[]> {
   if (!(await pathExists(skillsRoot))) return [];
   const entries = await fs.readdir(skillsRoot, { withFileTypes: true });
@@ -284,62 +273,52 @@ function assertUniquePluginNames(plugins: PluginManifest[]): void {
   }
 }
 
-function detectCommandCollisions(
+/**
+ * Walk every plugin's items of one resource kind and emit a warning for
+ * each that collides by name with a standalone item. Generic over the
+ * resource kind so we don't carry three byte-equivalent copies of this
+ * loop (one each for commands, skills, agents).
+ */
+function detectCollisions<T extends { name: string }>(
+  plugins: PluginManifest[],
+  standalone: readonly T[],
+  pluginField: 'commands' | 'skills' | 'agents',
+  code: ParseManifestWarning['code'],
+  kindLabel: string,
+): ParseManifestWarning[] {
+  const standaloneNames = new Set(standalone.map((x) => x.name));
+  const warnings: ParseManifestWarning[] = [];
+  for (const plugin of plugins) {
+    const items = plugin[pluginField] as readonly { name: string }[];
+    for (const item of items) {
+      if (standaloneNames.has(item.name)) {
+        warnings.push({
+          code,
+          message: `${kindLabel} "${item.name}" exists as both a standalone ${kindLabel.toLowerCase()} and inside plugin "${plugin.name}".`,
+        });
+      }
+    }
+  }
+  return warnings;
+}
+
+const detectCommandCollisions = (
   plugins: PluginManifest[],
   standaloneCommands: SlashCommand[],
-): ParseManifestWarning[] {
-  const standaloneNames = new Set(standaloneCommands.map((c) => c.name));
-  const warnings: ParseManifestWarning[] = [];
-  for (const plugin of plugins) {
-    for (const cmd of plugin.commands) {
-      if (standaloneNames.has(cmd.name)) {
-        warnings.push({
-          code: 'command-name-collision',
-          message: `Command "${cmd.name}" exists as both a standalone command and inside plugin "${plugin.name}".`,
-        });
-      }
-    }
-  }
-  return warnings;
-}
+): ParseManifestWarning[] =>
+  detectCollisions(plugins, standaloneCommands, 'commands', 'command-name-collision', 'Command');
 
-function detectSkillCollisions(
+const detectSkillCollisions = (
   plugins: PluginManifest[],
   standaloneSkills: Skill[],
-): ParseManifestWarning[] {
-  const standaloneNames = new Set(standaloneSkills.map((s) => s.name));
-  const warnings: ParseManifestWarning[] = [];
-  for (const plugin of plugins) {
-    for (const skill of plugin.skills) {
-      if (standaloneNames.has(skill.name)) {
-        warnings.push({
-          code: 'skill-name-collision',
-          message: `Skill "${skill.name}" exists as both a standalone skill and inside plugin "${plugin.name}".`,
-        });
-      }
-    }
-  }
-  return warnings;
-}
+): ParseManifestWarning[] =>
+  detectCollisions(plugins, standaloneSkills, 'skills', 'skill-name-collision', 'Skill');
 
-function detectAgentCollisions(
+const detectAgentCollisions = (
   plugins: PluginManifest[],
   standaloneAgents: Agent[],
-): ParseManifestWarning[] {
-  const standaloneNames = new Set(standaloneAgents.map((a) => a.name));
-  const warnings: ParseManifestWarning[] = [];
-  for (const plugin of plugins) {
-    for (const agent of plugin.agents) {
-      if (standaloneNames.has(agent.name)) {
-        warnings.push({
-          code: 'agent-name-collision',
-          message: `Agent "${agent.name}" exists as both a standalone agent and inside plugin "${plugin.name}".`,
-        });
-      }
-    }
-  }
-  return warnings;
-}
+): ParseManifestWarning[] =>
+  detectCollisions(plugins, standaloneAgents, 'agents', 'agent-name-collision', 'Agent');
 
 async function assertDirectory(path: string): Promise<void> {
   let stat: Awaited<ReturnType<typeof fs.stat>>;

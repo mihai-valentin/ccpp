@@ -7,7 +7,7 @@ import {
 } from '../lib/config.js';
 import { type Changeset, computeChangeset, hasChanges } from '../lib/diff.js';
 import { CollisionError, EnvError, UserError } from '../lib/errors.js';
-import { cloneOrUpdate } from '../lib/git.js';
+import { type CloneOrUpdateResult, cloneOrUpdate } from '../lib/git.js';
 import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
 import { type SyncOutcome, type SyncTrigger, appendSyncLog } from '../lib/log.js';
@@ -226,11 +226,11 @@ async function syncOneSource(source: ConfigSource, ctx: SyncContext): Promise<So
 async function cloneAndParseSource(
   source: ConfigSource,
   ctx: SyncContext,
-): Promise<{ synced: Awaited<ReturnType<typeof cloneOrUpdate>>; manifest: ParseManifestResult }> {
+): Promise<{ synced: CloneOrUpdateResult; manifest: ParseManifestResult }> {
   const cloneOpts: Parameters<typeof cloneOrUpdate>[1] = {};
   if (source.ref) cloneOpts.ref = source.ref;
 
-  let synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
+  let synced: CloneOrUpdateResult;
   try {
     synced = await cloneOrUpdate(source.url, cloneOpts);
   } catch (err) {
@@ -259,7 +259,7 @@ async function cloneAndParseSource(
 async function applySource(
   source: ConfigSource,
   ctx: SyncContext,
-  synced: Awaited<ReturnType<typeof cloneOrUpdate>>,
+  synced: CloneOrUpdateResult,
   manifest: ParseManifestResult,
   changeset: Changeset,
   applyStatus: ApplyStatus,
@@ -339,7 +339,7 @@ async function applySource(
 async function recordSkip(
   source: ConfigSource,
   ctx: SyncContext,
-  synced: Awaited<ReturnType<typeof cloneOrUpdate>>,
+  synced: CloneOrUpdateResult,
   changeset: Changeset,
   applyStatus: ApplyStatus,
   priorSha: string | null,

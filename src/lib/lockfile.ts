@@ -133,4 +133,3 @@ function requireIsoTimestamp(v: unknown, field: string, path: string): void {
     throw new Error(`Invalid lockfile ${path}: ${field} must be an ISO-8601 timestamp.`);
   }
 }
-

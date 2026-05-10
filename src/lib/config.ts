@@ -346,6 +346,12 @@ export async function applyConfigSet(
   rawValue: string,
   opts: ApplyConfigSetOptions = {},
 ): Promise<void> {
+  // Validate the value FIRST (by attempting a coerce on a throwaway copy)
+  // before any user-facing prompt. The previous order asked the user to
+  // acknowledge a risky write that would have failed validation anyway —
+  // surprising UX. Failing fast on bad input keeps the prompt honest.
+  validateRawValue(config, key, rawValue);
+
   const ackKind = requiresAcknowledgement(config, key, rawValue);
   if (ackKind !== null) {
     let confirmed = false;
@@ -371,6 +377,31 @@ export async function applyConfigSet(
     if (ackKind === 'policy') config.policyAcknowledgedAt = nowFn();
     else config.autoAcceptAcknowledgedAt = nowFn();
   }
+}
+
+/**
+ * Coerce-only check: throw if `rawValue` would fail to set `key` on a real
+ * config. Used by `applyConfigSet` to validate before prompting so a bad
+ * value never asks the user to acknowledge a risk they can't actually take.
+ */
+function validateRawValue(config: CcppConfig, key: string, rawValue: string): void {
+  const parsed = parseKeyOrThrow(key);
+  switch (parsed.kind) {
+    case 'syncPolicy':
+    case 'sourcePolicy':
+      coerceSyncPolicy(key, rawValue);
+      return;
+    case 'autoAccept':
+      coerceBoolean(key, rawValue);
+      return;
+    case 'policyAcknowledgedAt':
+    case 'autoAcceptAcknowledgedAt':
+      // Free-form strings; setConfigValue accepts whatever.
+      return;
+  }
+  // For sourcePolicy we also want to verify the source exists — but
+  // setConfigValue does that at write time, and the error message there is
+  // already clear, so duplicating the check would be noise.
 }
 
 /**

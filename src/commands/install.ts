@@ -10,7 +10,7 @@ import {
   writeConfig,
 } from '../lib/config.js';
 import { CollisionError, EnvError, UserError } from '../lib/errors.js';
-import { cloneOrUpdate } from '../lib/git.js';
+import { type CloneOrUpdateResult, cloneOrUpdate } from '../lib/git.js';
 import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
 import { parseManifest } from '../lib/manifest.js';
@@ -67,7 +67,7 @@ export interface InstallSourceParams {
 }
 
 export interface InstallSourceOutcome {
-  synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
+  synced: CloneOrUpdateResult;
   result: InstallResult;
   /** The config object as it stands after this install — already written to disk unless scratch. */
   config: CcppConfig | null;
@@ -244,7 +244,7 @@ export async function installSource(params: InstallSourceParams): Promise<Instal
   const cloneOpts: Parameters<typeof cloneOrUpdate>[1] = {};
   if (ref) cloneOpts.ref = ref;
 
-  let synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
+  let synced: CloneOrUpdateResult;
   try {
     synced = await cloneOrUpdate(url, cloneOpts);
   } catch (err) {
@@ -464,7 +464,7 @@ function emitInstallSummary(
 
 interface WizardReportParams {
   plan: WizardPlan;
-  synced: Awaited<ReturnType<typeof cloneOrUpdate>>;
+  synced: CloneOrUpdateResult;
   result: InstallResult;
   hookResult: InstallHookResult | null;
   common: ResolvedCommon;

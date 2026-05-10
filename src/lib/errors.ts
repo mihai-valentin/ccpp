@@ -7,20 +7,19 @@ import type { Conflict } from './types.js';
 export const EXIT = { OK: 0, USER: 1, ENV: 2, COLLISION: 3 } as const;
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT];
 
-/** User-fixable problem — bad flags, missing config, conflicting input. Exit 1. */
+/**
+ * User-fixable problem — bad flags, missing config, conflicting input. Exit 1.
+ *
+ * Inherits Error's ES2022 constructor unchanged, so `new UserError(msg, { cause })`
+ * forwards the cause chain — see lib/errors.test.ts for the pinned behavior.
+ */
 export class UserError extends Error {
   readonly exitCode = EXIT.USER;
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-  }
 }
 
 /** Environment problem — git unavailable, network failure, unreadable file. Exit 2. */
 export class EnvError extends Error {
   readonly exitCode = EXIT.ENV;
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-  }
 }
 
 /** Two sources tried to install the same destination. Exit 3. */

@@ -59,6 +59,13 @@ export interface RemoveFromLockfileResult {
  * leaves earlier swaps committed. This is rare in practice once parent
  * dirs exist; the user still has `.bak` files plus the staging tree (NOT
  * cleaned on phase-4 failure) for manual recovery.
+ *
+ * Lockfile mutation note: phase 2 records lockfile entries for *unchanged*
+ * items (since they need no on-disk write). Even when the eventual
+ * toWrite list is empty and applyManifest short-circuits before phase 3,
+ * the lockfile has already been mutated in place — the caller is expected
+ * to persist it. This is intentional: an unchanged file should still
+ * record its current source pin so subsequent removals know about it.
  */
 export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyManifestResult> {
   const plan = planFiles(opts.manifest, opts.claudeHome);

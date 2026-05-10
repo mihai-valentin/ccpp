@@ -288,9 +288,7 @@ describe('emitRecentEvents', () => {
     const long = 'x'.repeat(120);
     const txt = capture({
       sources: [],
-      recent: [
-        { timestamp: 'T2', trigger: 'hook', outcome: 'error', error: long },
-      ],
+      recent: [{ timestamp: 'T2', trigger: 'hook', outcome: 'error', error: long }],
     });
     expect(txt).toContain('xxx');
     expect(txt).not.toContain(long); // full string should not appear

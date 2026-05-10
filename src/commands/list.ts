@@ -71,6 +71,10 @@ export function lockfileRows(lockfile: Lockfile, claudeHome: string): ListRow[] 
         destPath,
       });
     } else if (cls.kind === 'skills' && cls.name.length > 0) {
+      // Skills are directory-shaped — multiple lockfile entries map to one
+      // logical row. Synthesize a destPath pointing at the skill's root
+      // directory (not the per-file path the lockfile actually keys on)
+      // so the list output reads as one row per skill, not one per file.
       const key = `${entry.sourceUrl}::${cls.name}`;
       if (seenSkills.has(key)) continue;
       seenSkills.add(key);

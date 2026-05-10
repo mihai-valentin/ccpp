@@ -80,7 +80,9 @@ describe('readLockfile', () => {
         installed: {},
       }),
     );
-    await expect(readLockfile(path)).rejects.toThrow(/sources\["https:\/\/example.com\/a.git"\].lastSync/);
+    await expect(readLockfile(path)).rejects.toThrow(
+      /sources\["https:\/\/example.com\/a.git"\].lastSync/,
+    );
   });
 
   it('rejects a sources entry with a non-ISO lastSync', async () => {

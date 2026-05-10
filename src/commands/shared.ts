@@ -54,6 +54,9 @@ export function defaultUserCcppHome(): string {
  * regardless of which directory Claude Code launches from.
  */
 export function commonPaths(opts: CommonOpts): ResolvedCommon {
+  // Side effect: --no-color disables ANSI globally for the rest of the
+  // process. Done here because every cli action calls commonPaths first;
+  // factoring it out would mean every action remembering to call it.
   if (opts.noColor) disableColor();
 
   const projectConfigPath = resolve(process.cwd(), CONFIG_FILENAME);

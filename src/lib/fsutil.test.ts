@@ -52,9 +52,7 @@ describe('readFileSafe', () => {
   it('refuses files larger than maxBytes', async () => {
     const path = join(scratch, 'big.bin');
     await fs.writeFile(path, Buffer.alloc(1024)); // 1 KiB
-    await expect(readFileSafe(path, { maxBytes: 256 })).rejects.toThrow(
-      /exceeds 256 byte limit/,
-    );
+    await expect(readFileSafe(path, { maxBytes: 256 })).rejects.toThrow(/exceeds 256 byte limit/);
   });
 
   it('reads files up to and including maxBytes', async () => {
