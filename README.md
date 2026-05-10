@@ -1,5 +1,12 @@
 # ccpp — Claude Code Plugin Proxy
 
+[![QA](https://github.com/mihai-valentin/ccpp/actions/workflows/qa.yml/badge.svg)](https://github.com/mihai-valentin/ccpp/actions/workflows/qa.yml)
+[![Release](https://github.com/mihai-valentin/ccpp/actions/workflows/release.yml/badge.svg)](https://github.com/mihai-valentin/ccpp/actions/workflows/release.yml)
+[![npm version](https://img.shields.io/npm/v/ccpp.svg)](https://www.npmjs.com/package/ccpp)
+[![npm downloads](https://img.shields.io/npm/dm/ccpp.svg)](https://www.npmjs.com/package/ccpp)
+[![Node.js](https://img.shields.io/node/v/ccpp.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Private skill / slash-command / subagent distribution for Claude Code teams. Syncs resources from private git repos (Bitbucket, GitLab, GitHub, self-hosted) into `~/.claude/` — preserving **short names**, using **native live-reload**, and working with whatever git auth the dev already has.
 
 Installable via npm; daily invocation via `npx ccpp sync`.
