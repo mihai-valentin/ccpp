@@ -78,6 +78,36 @@ export interface InstallSourceOutcome {
   config: CcppConfig | null;
 }
 
+/**
+ * Input to {@link syncSourceToDisk} — the shared clone → applyManifest →
+ * lockfile-pin core. Callers (install, checkout) decide config-mutation
+ * policy themselves; this helper deliberately knows nothing about
+ * ccpp.config.json.
+ */
+export interface SyncSourceToDiskParams {
+  url: string;
+  ref?: string;
+  common: ResolvedCommon;
+  /**
+   * Inputs to applyManifest's conflict resolver. Mutated on collision-resolution:
+   * after the call, this is the effective preferredSources reflecting both prior
+   * entries and any user-picked winners.
+   */
+  preferredSources: Record<string, string>;
+  forcePreferIncoming: boolean;
+  resolveConflicts?: (
+    conflicts: Conflict[],
+    incomingUrl: string,
+  ) => Promise<Record<string, string> | null>;
+}
+
+export interface SyncSourceToDiskResult {
+  synced: CloneOrUpdateResult;
+  result: InstallResult;
+  /** True when applyManifest ran a second pass after the user resolved collisions. */
+  conflictsResolved: boolean;
+}
+
 interface InstallFlags {
   ref?: string;
   prefer?: boolean;
@@ -240,13 +270,18 @@ export async function runInstallInteractive(opts: RunInstallInteractiveOpts): Pr
 /* -------------------- installSource (shared by both paths) -------------------- */
 
 /**
- * Clone the source, apply its manifest, and persist lockfile + config.
- * Shared between the URL-arg path and the wizard path so collision handling
- * and persistence order are identical. Exported so the collision-retry path
- * can be unit-tested in isolation.
+ * Clone the source, apply its manifest, run the collision-retry dance, and
+ * persist the lockfile. Knows nothing about ccpp.config.json — config mutation
+ * is the caller's responsibility (install pushes new entries, checkout updates
+ * an existing entry's ref).
+ *
+ * Mutates `params.preferredSources` in place so the caller can mirror the
+ * post-resolution map into config.preferredSources.
  */
-export async function installSource(params: InstallSourceParams): Promise<InstallSourceOutcome> {
-  const { url, ref, common, existing, scratch, forcePreferIncoming, resolveConflicts } = params;
+export async function syncSourceToDisk(
+  params: SyncSourceToDiskParams,
+): Promise<SyncSourceToDiskResult> {
+  const { url, ref, common, preferredSources, forcePreferIncoming, resolveConflicts } = params;
 
   const cloneOpts: Parameters<typeof cloneOrUpdate>[1] = {};
   if (ref) cloneOpts.ref = ref;
@@ -268,10 +303,6 @@ export async function installSource(params: InstallSourceParams): Promise<Instal
   const lockfile = await readLockfile(common.lockfilePath).catch((err: Error) => {
     throw new UserError(err.message);
   });
-
-  const preferredSources: Record<string, string> = existing?.preferredSources
-    ? { ...existing.preferredSources }
-    : {};
 
   const result = await applyManifest({
     manifest,
@@ -323,6 +354,37 @@ export async function installSource(params: InstallSourceParams): Promise<Instal
   }
 
   await writeLockfile(common.lockfilePath, lockfile);
+
+  return { synced, result, conflictsResolved };
+}
+
+/**
+ * Clone the source, apply its manifest, and persist lockfile + config.
+ * Shared between the URL-arg path and the wizard path so collision handling
+ * and persistence order are identical. Exported so the collision-retry path
+ * can be unit-tested in isolation.
+ *
+ * Config policy: if the source isn't in `existing.sources`, push a new entry
+ * (carrying `ref` if supplied). An already-present source's ref is left
+ * untouched — that's `ccpp checkout`'s job, deliberately not install's.
+ */
+export async function installSource(params: InstallSourceParams): Promise<InstallSourceOutcome> {
+  const { url, ref, common, existing, scratch, forcePreferIncoming, resolveConflicts } = params;
+
+  const preferredSources: Record<string, string> = existing?.preferredSources
+    ? { ...existing.preferredSources }
+    : {};
+
+  const syncParams: SyncSourceToDiskParams = {
+    url,
+    common,
+    preferredSources,
+    forcePreferIncoming,
+  };
+  if (ref) syncParams.ref = ref;
+  if (resolveConflicts) syncParams.resolveConflicts = resolveConflicts;
+
+  const { synced, result, conflictsResolved } = await syncSourceToDisk(syncParams);
 
   let finalConfig: CcppConfig | null = existing;
   if (!scratch) {

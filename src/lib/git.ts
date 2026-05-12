@@ -92,18 +92,21 @@ export async function cloneOrUpdate(
   const cacheRoot = opts.cacheRoot ?? defaultCacheRoot();
   const localPath = cachePathFor(url, cacheRoot);
 
-  // Decide whether `opts.ref` is a named ref (branch or tag) or a commit SHA
-  // by asking the remote — `git ls-remote` is authoritative and avoids the
-  // false positives of a hex-shape heuristic (a branch literally named
-  // `abc1234` would otherwise misroute to the SHA path, which silently
-  // skips the `reset --hard origin/<ref>` step on later syncs and never
-  // picks up upstream branch tip moves).
+  // Classify the ref by asking the remote — `git ls-remote` is authoritative
+  // and avoids the false positives of a hex-shape heuristic (a branch named
+  // `abc1234` would otherwise misroute to the SHA path, which silently skips
+  // the `reset --hard origin/<ref>` step on later syncs and never picks up
+  // upstream branch tip moves). Distinguishing branch vs tag also matters
+  // for the cache-widening step below: `set-branches` only makes sense for
+  // branches (tags come along via `fetch --tags`).
   //
   // `git clone --depth 1 --branch <ref>` only works for branches and tags;
   // commit SHAs need a non-shallow clone and no --branch arg, then a plain
   // `git checkout <sha>` (no `origin/<sha>` reset since that ref doesn't
   // exist on the remote).
-  const refIsSha = opts.ref !== undefined && !(await isNamedRefRemote(url, opts.ref));
+  const refKind: RefKind | undefined =
+    opts.ref !== undefined ? await classifyRemoteRef(url, opts.ref) : undefined;
+  const refIsSha = refKind === 'sha';
 
   const alreadyCloned = await pathExists(join(localPath, '.git'));
   if (!alreadyCloned) {
@@ -117,6 +120,25 @@ export async function cloneOrUpdate(
     if (refIsSha && (await isShallowRepo(localPath))) {
       // Need full history to resolve an arbitrary SHA.
       await runGit(['fetch', '--unshallow', 'origin'], { cwd: localPath });
+    }
+    // `git clone --branch <X>` (or a default shallow clone) sets a
+    // single-branch refspec (`+refs/heads/X:refs/remotes/origin/X`); a plain
+    // `git fetch` after that never sees any other branch, which breaks
+    // `ccpp checkout <url> <other-branch>` on a cached repo. Widen the
+    // refspec for the requested branch before fetching.
+    //
+    // Tags are exempt — `fetch --tags` covers them via the default tag
+    // refspec; trying to set-branches a tag would add a bogus
+    // `refs/heads/<tag>` entry that the next fetch would fail on with
+    // "couldn't find remote ref refs/heads/<tag>".
+    if (refKind === 'branch' && opts.ref !== undefined) {
+      try {
+        await runGit(['remote', 'set-branches', '--add', 'origin', opts.ref], { cwd: localPath });
+      } catch {
+        // set-branches failure is non-fatal: the subsequent fetch will use
+        // whatever refspec is configured, and the checkout step below
+        // surfaces a clearer error if the ref is truly missing.
+      }
     }
     await runGit(['fetch', '--tags', '--prune', 'origin'], { cwd: localPath });
   }
@@ -133,30 +155,39 @@ export async function cloneOrUpdate(
   return { localPath, sha, ref };
 }
 
+type RefKind = 'branch' | 'tag' | 'sha';
+
 /**
- * True when `ref` exists as a branch or tag on the remote `url`.
+ * Classify `ref` against the remote `url`: branch, tag, or commit SHA.
  *
- * Uses `git ls-remote --exit-code` which exits 0 if at least one matching
- * ref is returned, 2 if none match, and any other non-zero on auth/network
- * failure. We resolve `false` only for the "no match" case (exit 2); other
- * errors propagate to surface a meaningful message. This replaces a hex-
- * shape heuristic that misclassified branches literally named like SHAs.
+ * Performs one `git ls-remote` querying both refs/heads/<ref> and
+ * refs/tags/<ref>; the resulting stdout has one line per matching ref
+ * (format `<sha>\t<full-ref>`) which we parse to distinguish branch from
+ * tag. If neither matches, the ref is assumed to be a commit SHA (handled
+ * downstream by a non-shallow clone path).
+ *
+ * Branches take precedence on the off chance someone names a branch and a
+ * tag identically — the branch path matches git's own `checkout <name>`
+ * disambiguation order.
  */
-async function isNamedRefRemote(url: string, ref: string): Promise<boolean> {
-  try {
-    await runGit(
-      ['ls-remote', '--exit-code', '--quiet', url, `refs/heads/${ref}`, `refs/tags/${ref}`],
-      { cwd: undefined },
-    );
-    return true;
-  } catch (err) {
-    // runGit's error message format is `${cmd} failed (exit ${code}): ${tail}`.
-    // We only swallow the "no matching refs" case; any other failure (auth,
-    // DNS, repo-not-found) re-throws so the user sees a real diagnostic
-    // instead of a wrong-path SHA clone attempt.
-    if (/failed \(exit 2\)/.test((err as Error).message)) return false;
-    throw err;
+async function classifyRemoteRef(url: string, ref: string): Promise<RefKind> {
+  // Any failure here (auth, DNS, repo-not-found) propagates — we want the
+  // user to see a clear diagnostic instead of silently falling through to
+  // the SHA clone path.
+  const { stdout } = await runGit(
+    ['ls-remote', '--quiet', url, `refs/heads/${ref}`, `refs/tags/${ref}`],
+    { cwd: undefined },
+  );
+
+  const branchLine = `refs/heads/${ref}`;
+  const tagLine = `refs/tags/${ref}`;
+  for (const line of stdout.split('\n')) {
+    if (line.endsWith(`\t${branchLine}`)) return 'branch';
   }
+  for (const line of stdout.split('\n')) {
+    if (line.endsWith(`\t${tagLine}`)) return 'tag';
+  }
+  return 'sha';
 }
 
 async function isShallowRepo(repoDir: string): Promise<boolean> {

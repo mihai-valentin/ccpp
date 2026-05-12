@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2026-05-12
+
+### Features
+
+- **New `ccpp checkout <source> <ref>` verb** for swapping the active ref of an already-installed source. Closes the v0.2.3 ref-swap gap: `ccpp install <existing-url>@<new-ref>` updated the lockfile and disk but left `ccpp.config.json` pointing at the old ref, so the next `ccpp sync` silently reverted the swap. `checkout` mutates config, lockfile, and `~/.claude/` atomically — same persistence order as install (lockfile first, then config), so a crash leaves the lockfile authoritative for the new ref and the user re-runs to reconcile. Accepts the `<source>@<ref>` shorthand identically to `install`. Flags: `--prefer` / `--yes` (auto-resolve collisions in incoming's favour, parity with install), `--dry-run` (clone + diff against current disk state, no writes), plus the common `--json` / `--quiet` / `--no-color` / `--claude-home` / `--config` / `--lockfile`. JSON shape: `{ url, fromRef, toRef, toSha, installed, updated, unchanged, backups, conflicts }`; same-ref invocations emit `{ noop: true }` and exit 0 without touching disk.
+
+### Bug fixes
+
+- **`git fetch` after a shallow clone now widens the refspec for the requested branch.** `git clone --depth 1 [--branch <X>]` sets a single-branch refspec, so a later `cloneOrUpdate(url, { ref: <other-branch> })` would `fetch` against only the original refspec and the subsequent `git checkout <other-branch>` would fail with "pathspec did not match any file(s) known to git". `ccpp checkout` would have hit this every time on a cached repo; `ccpp install <existing-url>@<other-branch>` and `ccpp sync` after a config-edited ref would have too. The fix runs `git remote set-branches --add origin <ref>` (idempotent) before the fetch, but only when the ref is classified as a branch — tags come along via `fetch --tags` and the previous attempt to set-branches a tag created a bogus `refs/heads/<tag>` refspec that the next fetch failed on.
+- **Ref classification distinguishes branch from tag.** `isNamedRefRemote` (boolean) is replaced by `classifyRemoteRef` returning `'branch' | 'tag' | 'sha'`. Used internally by the refspec-widening step above and the existing SHA-vs-named-ref clone-arg decisions. One `ls-remote` round-trip, no change to the user-visible behavior of branch / tag / SHA installs.
+
 ## [0.2.3] - 2026-05-10
 
 ### Bug fixes

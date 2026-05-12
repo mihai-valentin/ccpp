@@ -25,6 +25,7 @@ set -euo pipefail
 
 REMOTE="https://github.com/mihai-valentin/ccpp-test-pingpong.git"
 TAG="v0.1.0"
+BRANCH="add-cheer-agent"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Helpers
@@ -140,7 +141,102 @@ STATUS="$(echo "$STATUS_JSON" | jq_get 'o.sources[0].status')"
 [ "$STATUS" = "up-to-date" ] || fail "expected up-to-date, got $STATUS"
 pass "status reports up-to-date"
 
-# -------- 7. @v0.1.0 shorthand round-trip --------
+# -------- 7. ccpp checkout round-trip (master → add-cheer-agent → master) --------
+#
+# The `add-cheer-agent` branch on ccpp-test-pingpong differs from master:
+#   - adds  agents/cheer.md
+#   - modifies commands/ping.md (adds a "branch marker" line)
+# So the round-trip exercises both diff directions: added + modified flipping
+# one way on checkout-to-branch, then modified flipping back on checkout-home.
+
+# Snapshot master's ping.md bytes before swapping branches — used to verify
+# checkout actually rewrites the destination, not just the lockfile ref.
+PING_FILE="$CLAUDE_HOME/commands/ping.md"
+PING_MASTER_BYTES="$(cat "$PING_FILE")"
+echo "$PING_MASTER_BYTES" | grep -q "Branch marker" \
+  && fail "master's ping.md unexpectedly already has the branch marker"
+
+# Dry-run first — should report changes but write nothing.
+say "ccpp checkout $REMOTE $BRANCH --dry-run"
+DRYRUN_JSON="$("$CCPP_BIN" checkout "$REMOTE" "$BRANCH" \
+  --claude-home "$CLAUDE_HOME" --dry-run --json)"
+DRY_FLAG="$(echo "$DRYRUN_JSON" | jq_get 'o.dryRun')"
+DRY_ADDED="$(echo "$DRYRUN_JSON" | jq_get 'o.added.length')"
+DRY_MODIFIED="$(echo "$DRYRUN_JSON" | jq_get 'o.modified.length')"
+[ "$DRY_FLAG" = "true" ] || fail "expected dryRun=true, got $DRY_FLAG"
+[ "$DRY_ADDED" = "1" ] || fail "expected 1 added in dry-run, got $DRY_ADDED"
+[ "$DRY_MODIFIED" = "1" ] || fail "expected 1 modified in dry-run, got $DRY_MODIFIED"
+[ ! -f "$CLAUDE_HOME/agents/cheer.md" ] || fail "dry-run materialised cheer.md (should not)"
+[ "$(cat "$PING_FILE")" = "$PING_MASTER_BYTES" ] || fail "dry-run modified ping.md (should not)"
+pass "dry-run: +1 added, ~1 modified, no writes"
+
+# Real checkout — branch swap should rewrite ping.md and create cheer.md.
+say "ccpp checkout $REMOTE $BRANCH"
+CHECKOUT_JSON="$("$CCPP_BIN" checkout "$REMOTE" "$BRANCH" \
+  --claude-home "$CLAUDE_HOME" --json)"
+TO_REF="$(echo "$CHECKOUT_JSON" | jq_get 'o.toRef')"
+FROM_REF="$(echo "$CHECKOUT_JSON" | jq_get 'o.fromRef')"
+INSTALLED_COUNT="$(echo "$CHECKOUT_JSON" | jq_get 'o.installed.length')"
+UPDATED_COUNT="$(echo "$CHECKOUT_JSON" | jq_get 'o.updated.length')"
+[ "$TO_REF" = "$BRANCH" ] || fail "expected toRef=$BRANCH in checkout JSON, got $TO_REF"
+[ "$FROM_REF" = "null" ] || info "fromRef was $FROM_REF (initial install used the default branch with no explicit ref)"
+[ "$INSTALLED_COUNT" = "1" ] || fail "expected 1 installed (cheer.md), got $INSTALLED_COUNT"
+[ "$UPDATED_COUNT" = "1" ] || fail "expected 1 updated (ping.md), got $UPDATED_COUNT"
+pass "checkout reported 1 installed + 1 updated"
+
+# Verify disk state: cheer.md exists, ping.md now has the branch marker.
+[ -f "$CLAUDE_HOME/agents/cheer.md" ] || fail "agents/cheer.md missing after checkout to $BRANCH"
+grep -q "Branch marker" "$PING_FILE" \
+  || fail "ping.md does not contain the branch marker after checkout to $BRANCH"
+pass "cheer.md materialized; ping.md rewritten with branch-marker bytes"
+
+# Config + lockfile both record the new ref on the same source entry.
+SRC_COUNT="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("'"$CCPP_HOME_DIR"'/ccpp.config.json","utf8")).sources.length)')"
+SRC_REF="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("'"$CCPP_HOME_DIR"'/ccpp.config.json","utf8")).sources[0].ref)')"
+[ "$SRC_COUNT" = "1" ] || fail "expected 1 source in config, got $SRC_COUNT"
+[ "$SRC_REF" = "$BRANCH" ] || fail "expected config.sources[0].ref=$BRANCH, got $SRC_REF"
+LOCK_REF="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("'"$CCPP_HOME_DIR"'/ccpp.lock.json","utf8")).sources["'"$REMOTE"'"].ref)')"
+[ "$LOCK_REF" = "$BRANCH" ] || fail "expected lockfile ref=$BRANCH, got $LOCK_REF"
+pass "config + lockfile both pinned to $BRANCH"
+
+# Checkout back to master — ping.md should be restored byte-for-byte.
+say "ccpp checkout $REMOTE master (swap back)"
+"$CCPP_BIN" checkout "$REMOTE" master \
+  --claude-home "$CLAUDE_HOME" --quiet \
+  || fail "checkout back to master failed"
+SRC_REF_BACK="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("'"$CCPP_HOME_DIR"'/ccpp.config.json","utf8")).sources[0].ref)')"
+[ "$SRC_REF_BACK" = "master" ] || fail "expected config.sources[0].ref=master after swap back, got $SRC_REF_BACK"
+[ "$(cat "$PING_FILE")" = "$PING_MASTER_BYTES" ] || fail "ping.md not restored to master bytes after swap back"
+pass "round-trip: ping.md restored byte-for-byte; config back on master"
+
+# cheer.md lingers on disk after the swap-back — this is a known v0.2.4
+# limitation (applyManifest doesn't auto-delete files that left the new ref's
+# manifest). The test surfaces it without failing; orphan-cleanup is tracked
+# for a future release.
+if [ -f "$CLAUDE_HOME/agents/cheer.md" ]; then
+  info "cheer.md still on disk after swap back (known v0.2.4 orphan-cleanup gap)"
+fi
+
+# No-op when already on master.
+NOOP_JSON="$("$CCPP_BIN" checkout "$REMOTE" master \
+  --claude-home "$CLAUDE_HOME" --json)"
+NOOP_FLAG="$(echo "$NOOP_JSON" | jq_get 'o.noop')"
+[ "$NOOP_FLAG" = "true" ] || fail "expected noop=true on same-ref checkout, got $NOOP_FLAG"
+pass "re-running checkout on the same ref is a no-op"
+
+# Tag round-trip — proves checkout handles tags too (v0.1.0 points at master's
+# initial commit, so swap is a no-disk-change ref label flip + back).
+say "ccpp checkout $REMOTE $TAG (tag round-trip)"
+"$CCPP_BIN" checkout "$REMOTE" "$TAG" \
+  --claude-home "$CLAUDE_HOME" --quiet \
+  || fail "checkout to $TAG (tag) failed"
+TAG_LOCK_REF="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("'"$CCPP_HOME_DIR"'/ccpp.lock.json","utf8")).sources["'"$REMOTE"'"].ref)')"
+[ "$TAG_LOCK_REF" = "$TAG" ] || fail "expected lockfile ref=$TAG after tag checkout, got $TAG_LOCK_REF"
+"$CCPP_BIN" checkout "$REMOTE" master --claude-home "$CLAUDE_HOME" --quiet \
+  || fail "checkout back to master from tag failed"
+pass "tag checkout + return to master OK"
+
+# -------- 8. @v0.1.0 shorthand round-trip --------
 say "ccpp install $REMOTE@$TAG (shorthand) on a fresh claude-home"
 TAG_HOME="$SCRATCH/claude-tag"
 "$CCPP_BIN" install "${REMOTE}@${TAG}" \
@@ -153,14 +249,20 @@ TAG_REF="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("'"$SCRATC
 [ "$TAG_REF" = "$TAG" ] || fail "expected ref=$TAG in config, got $TAG_REF"
 pass "config recorded ref=$TAG"
 
-# -------- 8. ccpp uninstall round-trip --------
+# -------- 9. ccpp uninstall round-trip --------
+#
+# After the round-trip in step 7, lockfile.installed carries 6 entries: the
+# 5 master files plus an orphan cheer.md left behind by the swap back (the
+# v0.2.4 orphan-cleanup gap surfaced in the step-7 info line). Uninstall
+# treats all 6 as in-scope: the 5 master files are renamed to .bak, and
+# cheer.md (still on disk from add-cheer-agent) is renamed too.
 say "ccpp uninstall $REMOTE"
 UNINSTALL_JSON="$(ccpp uninstall "$REMOTE" --json)"
 REMOVED_COUNT="$(echo "$UNINSTALL_JSON" | jq_get 'o.removed.length')"
 BACKUPS_COUNT="$(echo "$UNINSTALL_JSON" | jq_get 'o.backups.length')"
-[ "$REMOVED_COUNT" = "5" ] || fail "expected 5 removed, got $REMOVED_COUNT"
-[ "$BACKUPS_COUNT" = "5" ] || fail "expected 5 backups, got $BACKUPS_COUNT"
-pass "uninstall removed 5 files, kept 5 .bak files"
+[ "$REMOVED_COUNT" = "6" ] || fail "expected 6 removed (5 master + 1 orphan from checkout round-trip), got $REMOVED_COUNT"
+[ "$BACKUPS_COUNT" = "6" ] || fail "expected 6 backups, got $BACKUPS_COUNT"
+pass "uninstall removed 6 files (5 master + 1 orphan), kept 6 .bak files"
 
 for f in "${EXPECTED[@]}"; do
   [ ! -f "$f" ] || fail "$f should be gone after uninstall"
@@ -176,7 +278,7 @@ for bak in $(echo "$UNINSTALL_JSON" | node -e '
 done
 pass ".bak files present on disk"
 
-# -------- 9. config no longer references the source --------
+# -------- 10. config no longer references the source --------
 SOURCE_LIST="$(node -e '
   const path = "'"$CCPP_HOME_DIR"'/ccpp.config.json";
   const cfg = JSON.parse(require("fs").readFileSync(path, "utf8"));
@@ -186,4 +288,4 @@ SOURCE_LIST="$(node -e '
 pass "config.sources empty after uninstall"
 
 echo
-printf "${green}✓${reset} e2e-install: 9 steps passed\n"
+printf "${green}✓${reset} e2e-install: 10 steps passed\n"

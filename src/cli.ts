@@ -1,4 +1,5 @@
 import { cac } from 'cac';
+import { runCheckout } from './commands/checkout.js';
 import { type ConfigAction, runConfig } from './commands/config.js';
 import { runInit } from './commands/init.js';
 import { type HookScope, runInstallHook } from './commands/install-hook.js';
@@ -164,6 +165,20 @@ async function doUninstall(name: string, opts: CommonOpts): Promise<void> {
   await runUninstall({ name, ...commonPaths(opts) });
 }
 
+async function doCheckout(
+  source: string,
+  ref: string | undefined,
+  opts: CommonOpts & { prefer?: boolean; yes?: boolean; dryRun?: boolean },
+): Promise<void> {
+  const common = commonPaths(opts);
+  const runOpts: Parameters<typeof runCheckout>[0] = { source, ...common };
+  if (ref !== undefined) runOpts.ref = ref;
+  if (opts.prefer === true) runOpts.prefer = true;
+  if (opts.yes === true) runOpts.yes = true;
+  if (opts.dryRun === true) runOpts.dryRun = true;
+  await runCheckout(runOpts);
+}
+
 async function doConfig(
   action: string,
   key: string | undefined,
@@ -303,6 +318,26 @@ async function main(argv: string[]): Promise<void> {
       .action(async (name: string, opts: CommonOpts) => {
         await doUninstall(name, opts);
       }),
+  );
+
+  attachCommonOptions(
+    cli
+      .command(
+        'checkout <source> [ref]',
+        'Switch an already-installed source to a different ref (branch / tag / commit). Accepts <source>@<ref> shorthand.',
+      )
+      .option('--prefer', 'On collision, prefer this checkout over existing lockfile entries')
+      .option('--yes', 'Auto-confirm prompts during this checkout run')
+      .option('--dry-run', 'Clone + diff against current ~/.claude/; no writes')
+      .action(
+        async (
+          source: string,
+          ref: string | undefined,
+          opts: CommonOpts & { prefer?: boolean; yes?: boolean; dryRun?: boolean },
+        ) => {
+          await doCheckout(source, ref, opts);
+        },
+      ),
   );
 
   attachCommonOptions(

@@ -24,6 +24,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const REMOTE = 'https://github.com/mihai-valentin/ccpp-test-pingpong.git';
 const TAG = 'v0.1.0';
+const BRANCH = 'add-cheer-agent';
 const projectRoot = resolve(__dirname, '..', '..');
 const cliPath = join(projectRoot, 'dist', 'cli.cjs');
 
@@ -303,6 +304,170 @@ describe('e2e: ccpp-test-pingpong', () => {
     });
     expect(r.code, r.stderr).toBe(0);
   });
+});
+
+/**
+ * Checkout round-trip tests against the real `add-cheer-agent` branch.
+ *
+ * The branch differs from master in two specific ways, by design, to make
+ * these tests precise:
+ *   - adds  agents/cheer.md
+ *   - modifies commands/ping.md (a "Branch marker:" sentinel line)
+ *
+ * Each test runs in its own scratch claude-home so the orphan-on-swap-back
+ * gap (v0.2.4 limitation) doesn't bleed across tests. A test that depends on
+ * the orphan-cleanup landing should fail intentionally with a clear message
+ * when that work ships — these tests are pinned to the v0.2.4 contract.
+ */
+describe('e2e: ccpp checkout against ccpp-test-pingpong', () => {
+  const pingPath = (home: string) => join(home, 'commands', 'ping.md');
+  const cheerPath = (home: string) => join(home, 'agents', 'cheer.md');
+
+  it('master → add-cheer-agent rewrites ping.md and materializes cheer.md', async () => {
+    if (!net()) return;
+    // Seed: install at master.
+    const installR = await cli(
+      ['install', REMOTE, '--claude-home', claudeHome, '--quiet'],
+      scratch,
+      { CCPP_CACHE: cacheRoot },
+    );
+    expect(installR.code, installR.stderr).toBe(0);
+    const masterPingBytes = await fs.readFile(pingPath(claudeHome), 'utf8');
+    expect(masterPingBytes).not.toMatch(/Branch marker/);
+    await expect(fs.access(cheerPath(claudeHome))).rejects.toThrow();
+
+    // Checkout to the branch.
+    const coR = await cli(
+      ['checkout', REMOTE, BRANCH, '--claude-home', claudeHome, '--json'],
+      scratch,
+      { CCPP_CACHE: cacheRoot },
+    );
+    expect(coR.code, coR.stderr).toBe(0);
+    const out = JSON.parse(coR.stdout);
+    expect(out.toRef).toBe(BRANCH);
+    // The branch has cheer.md (new file) and a modified ping.md. Installer's
+    // staging tree maps these to .installed (no prior dest) and .updated
+    // (prior dest, different bytes) respectively.
+    expect(out.installed).toContain(cheerPath(claudeHome));
+    expect(out.updated).toContain(pingPath(claudeHome));
+
+    // Disk state matches the branch's manifest.
+    await expect(fs.access(cheerPath(claudeHome))).resolves.toBeUndefined();
+    const branchPingBytes = await fs.readFile(pingPath(claudeHome), 'utf8');
+    expect(branchPingBytes).toMatch(/Branch marker/);
+    expect(branchPingBytes).not.toBe(masterPingBytes);
+
+    // Config + lockfile both pinned to the branch.
+    const cfg = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
+    expect(cfg.sources).toEqual([{ ref: BRANCH, url: REMOTE }]);
+    const lock = JSON.parse(await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8'));
+    expect(lock.sources[REMOTE].ref).toBe(BRANCH);
+  }, 60_000);
+
+  it('round-trip back to master restores ping.md byte-for-byte', async () => {
+    if (!net()) return;
+    await cli(['install', REMOTE, '--claude-home', claudeHome, '--quiet'], scratch, {
+      CCPP_CACHE: cacheRoot,
+    });
+    const masterPingBytes = await fs.readFile(pingPath(claudeHome), 'utf8');
+
+    await cli(['checkout', REMOTE, BRANCH, '--claude-home', claudeHome, '--quiet'], scratch, {
+      CCPP_CACHE: cacheRoot,
+    });
+    const back = await cli(
+      ['checkout', REMOTE, 'master', '--claude-home', claudeHome, '--json'],
+      scratch,
+      { CCPP_CACHE: cacheRoot },
+    );
+    expect(back.code, back.stderr).toBe(0);
+    const out = JSON.parse(back.stdout);
+    expect(out.toRef).toBe('master');
+    expect(out.fromRef).toBe(BRANCH);
+
+    // ping.md restored to master's bytes.
+    const restoredPingBytes = await fs.readFile(pingPath(claudeHome), 'utf8');
+    expect(restoredPingBytes).toBe(masterPingBytes);
+
+    // Config + lockfile back on master.
+    const cfg = JSON.parse(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8'));
+    expect(cfg.sources[0].ref).toBe('master');
+    const lock = JSON.parse(await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8'));
+    expect(lock.sources[REMOTE].ref).toBe('master');
+
+    // Known v0.2.4 orphan-cleanup gap: cheer.md was added on the branch and
+    // never removed by the swap-back applyManifest pass, so it lingers on
+    // disk. Re-encode the gap as an assertion so when orphan-cleanup ships
+    // and this expectation flips, the change to the contract is loud and
+    // traceable. Flip `.resolves` to `.rejects` (and update CHANGELOG)
+    // when the orphan-cleanup pass lands.
+    await expect(fs.access(cheerPath(claudeHome))).resolves.toBeUndefined();
+  }, 90_000);
+
+  it('--dry-run reports the changeset without writing anything', async () => {
+    if (!net()) return;
+    await cli(['install', REMOTE, '--claude-home', claudeHome, '--quiet'], scratch, {
+      CCPP_CACHE: cacheRoot,
+    });
+    const masterPingBytes = await fs.readFile(pingPath(claudeHome), 'utf8');
+    const cfgBefore = await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8');
+    const lockBefore = await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8');
+
+    const r = await cli(
+      ['checkout', REMOTE, BRANCH, '--claude-home', claudeHome, '--dry-run', '--json'],
+      scratch,
+      { CCPP_CACHE: cacheRoot },
+    );
+    expect(r.code, r.stderr).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.dryRun).toBe(true);
+    expect(out.toRef).toBe(BRANCH);
+    expect(out.added).toContain(cheerPath(claudeHome));
+    expect(out.modified).toContain(pingPath(claudeHome));
+
+    // No writes — disk, config, lockfile all unchanged.
+    await expect(fs.access(cheerPath(claudeHome))).rejects.toThrow();
+    expect(await fs.readFile(pingPath(claudeHome), 'utf8')).toBe(masterPingBytes);
+    expect(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8')).toBe(cfgBefore);
+    expect(await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8')).toBe(lockBefore);
+  }, 60_000);
+
+  it('checkout to the same ref is a no-op (exits 0, emits noop:true, writes nothing)', async () => {
+    if (!net()) return;
+    await cli(
+      ['install', `${REMOTE}@master`, '--claude-home', claudeHome, '--quiet'],
+      scratch,
+      { CCPP_CACHE: cacheRoot },
+    );
+    const cfgBefore = await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8');
+    const lockBefore = await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8');
+
+    const r = await cli(
+      ['checkout', REMOTE, 'master', '--claude-home', claudeHome, '--json'],
+      scratch,
+      { CCPP_CACHE: cacheRoot },
+    );
+    expect(r.code, r.stderr).toBe(0);
+    const out = JSON.parse(r.stdout);
+    expect(out.noop).toBe(true);
+    expect(out.fromRef).toBe('master');
+    expect(out.toRef).toBe('master');
+
+    // Nothing touched.
+    expect(await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8')).toBe(cfgBefore);
+    expect(await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8')).toBe(lockBefore);
+  }, 60_000);
+
+  it('checkout errors with exit 1 when the source is not in ccpp.config.json', async () => {
+    if (!net()) return;
+    // Fresh scratch, no install — config doesn't exist yet.
+    const r = await cli(
+      ['checkout', REMOTE, BRANCH, '--claude-home', claudeHome, '--quiet'],
+      scratch,
+      { CCPP_CACHE: cacheRoot },
+    );
+    expect(r.code).toBe(1);
+    expect(r.stderr).toMatch(/no ccpp\.config\.json|not in ccpp\.config\.json/i);
+  }, 30_000);
 });
 
 /* -------------------- helpers -------------------- */

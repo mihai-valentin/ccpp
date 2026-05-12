@@ -12,6 +12,12 @@ export interface LocalGitFixture {
   workPath: string;
   /** Commit a new file and push to the bare repo. Returns the new HEAD SHA. */
   advance: (filename: string, content: string) => Promise<string>;
+  /**
+   * Commit a file on a named branch (created off main if it doesn't yet exist)
+   * and push it. Leaves the work tree checked out on `main` so subsequent
+   * `advance()` calls keep landing on main. Returns the branch tip SHA.
+   */
+  advanceOn: (branch: string, filename: string, content: string) => Promise<string>;
   /** Delete every temp directory created by this fixture. */
   cleanup: () => Promise<void>;
 }
@@ -49,6 +55,28 @@ export async function createLocalGitFixture(label = 'ccpp-git-fixture'): Promise
       await run(['commit', '-m', `advance ${filename}`], { cwd: workPath });
       await run(['push', 'origin', 'main'], { cwd: workPath });
       const { stdout } = await run(['rev-parse', 'HEAD'], { cwd: workPath });
+      return stdout.trim();
+    },
+    advanceOn: async (branch: string, filename: string, content: string) => {
+      // Create the branch off main on its first use; otherwise jump back to
+      // its tip so we extend it linearly instead of forking off main again.
+      const local = await run(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], {
+        cwd: workPath,
+      }).then(
+        () => true,
+        () => false,
+      );
+      if (local) {
+        await run(['checkout', branch], { cwd: workPath });
+      } else {
+        await run(['checkout', '-b', branch, 'main'], { cwd: workPath });
+      }
+      await fs.writeFile(join(workPath, filename), content);
+      await run(['add', filename], { cwd: workPath });
+      await run(['commit', '-m', `advance ${filename} on ${branch}`], { cwd: workPath });
+      await run(['push', '-u', 'origin', branch], { cwd: workPath });
+      const { stdout } = await run(['rev-parse', 'HEAD'], { cwd: workPath });
+      await run(['checkout', 'main'], { cwd: workPath });
       return stdout.trim();
     },
     cleanup: async () => {
