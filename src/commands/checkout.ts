@@ -251,6 +251,7 @@ function emitCheckoutSummary(
         installed: result.installed,
         updated: result.updated,
         unchanged: result.unchanged,
+        removed: result.removed,
         backups: result.backups,
         conflicts: result.conflicts,
       })}\n`,
@@ -262,8 +263,9 @@ function emitCheckoutSummary(
     `${green('✓')} ${url} switched ${fromLabel} → ${toRef} ${dim(`@${formatShortSha(synced.sha)}`)}`,
     opts,
   );
+  const removedSuffix = result.removed.length > 0 ? `, ${result.removed.length} removed` : '';
   log(
-    `  ${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged`,
+    `  ${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged${removedSuffix}`,
     opts,
   );
   log(`  ${dim('config:')} ${opts.configPath}`, opts);

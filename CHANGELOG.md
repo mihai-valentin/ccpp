@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.5] - 2026-05-12
+
+### Bug fixes
+
+- **`applyManifest` now prunes orphans on every apply.** Before v0.2.5, `applyManifest` only iterated the new manifest's plan in one direction ("for every file the new ref wants → write it; record it in lockfile") and never asked the inverse ("for every lockfile entry I own → is it still in the new plan? if not, get rid of it"). The result: `ccpp checkout` to a ref that drops a file left the file lingering on disk and in the lockfile (pinned to the old ref's SHA), and `ccpp sync` after an upstream removal printed `1 removed` in its summary while doing nothing about it — the counter was true on paper but a lie in practice. The fix adds a fifth phase to `applyManifest` (after preparePlan / stagePlan / commitStaged) that walks `lockfile.installed` for entries owned by the current sourceUrl that the new plan no longer mentions, renames each disk file to `.bak.<ts>` (uninstall's never-destroy precedent), and drops the lockfile entry. Surfaced as `ApplyManifestResult.removed: string[]` plus paths added to `.backups`. Affects all three call sites (install, sync, checkout) — sync's existing `removed` counter is now backed by actual disk action; checkout's round-trip ("test branch, swap back") leaves no orphans; install's re-install path cleans up any file dropped from upstream.
+
+### API surface
+
+- **`ApplyManifestResult` gains `removed: string[]`** — a strict superset, no breaking change. Same field name propagates to `InstallResult` (install / checkout JSON output) and `SourceSyncReport` (sync JSON output, where the field already existed but is now populated by `applyManifest` rather than a redundant pre-apply lockfile diff in `sync.ts`).
+
 ## [0.2.4] - 2026-05-12
 
 ### Features

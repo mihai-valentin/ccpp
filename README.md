@@ -16,7 +16,7 @@ ccpp ships as an `npm`-installable tarball attached to each GitHub Release. Ther
 
 ```bash
 # Pin to a specific version (recommended — reproducible)
-npm i -g https://github.com/mihai-valentin/ccpp/releases/download/v0.2.4/ccpp-0.2.4.tgz
+npm i -g https://github.com/mihai-valentin/ccpp/releases/download/v0.2.5/ccpp-0.2.5.tgz
 
 # Verify it landed on PATH
 ccpp --version
@@ -45,7 +45,7 @@ Useful when you want to track `master` or contribute. Slower than the tarball in
 
 ```bash
 # Download + run a single command without persisting anything on PATH:
-npx --yes https://github.com/mihai-valentin/ccpp/releases/download/v0.2.4/ccpp-0.2.4.tgz --help
+npx --yes https://github.com/mihai-valentin/ccpp/releases/download/v0.2.5/ccpp-0.2.5.tgz --help
 ```
 
 This re-downloads on every invocation, so it's only useful for trying ccpp once. For daily use, install globally as above.
@@ -269,6 +269,8 @@ ccpp checkout git@bitbucket.org:your-org/ai-plugins.git experimental --dry-run
 
 `checkout` only works for sources already present in `ccpp.config.json`. For a brand-new source, use `ccpp install <url>@<ref>` — the error message points you there. Collision handling mirrors install: pass `--prefer` (or `--yes`) to auto-resolve every conflict in the incoming source's favour; otherwise checkout prompts on a TTY or exits 3 in CI.
 
+**Orphan cleanup (since v0.2.5).** When the new ref's manifest drops a file the previous ref shipped (e.g. switching back to `main` after testing an `add-cheer-agent` branch), the orphaned file is renamed to `.bak.<ts>` and its lockfile entry is dropped. The same cleanup applies to `ccpp sync` when upstream removes a file — pre-v0.2.5, sync would report `1 removed` and leave the file in `~/.claude/`; now the counter reflects an actual rename. Path lists are surfaced in the `removed` and `backups` fields of `--json` output.
+
 ## Troubleshooting
 
 ### Auth failures
@@ -336,14 +338,14 @@ make install
 make verify
 ```
 
-Test layout — unit tests live next to the source (`src/**/*.test.ts`) and CLI / end-to-end tests in `tests/` (including `tests/integration/` for bare-git-fixture-driven flows). The default suite runs 275 tests in under 10 seconds.
+Test layout — unit tests live next to the source (`src/**/*.test.ts`) and CLI / end-to-end tests in `tests/` (including `tests/integration/` for bare-git-fixture-driven flows). The default suite runs 279 tests in under 10 seconds.
 
 ### Test coverage
 
-Run with `npm run coverage` (uses `@vitest/coverage-v8`). Headline numbers as of v0.2.4:
+Run with `npm run coverage` (uses `@vitest/coverage-v8`). Headline numbers as of v0.2.5:
 
 ```
-statements  64.19%   branches  80.09%   functions  84.09%   lines  64.19%
+statements  64.38%   branches  80.35%   functions  84.18%   lines  64.38%
 ```
 
 The 64% statements/lines figure is artificially low because `src/cli.ts` and several command modules are exercised end-to-end via subprocess (`node dist/cli.cjs` spawned from `tests/cli.test.ts` and `tests/cli-config.test.ts`); v8 in-process coverage doesn't trace subprocess execution. The lib layer (`src/lib/`) sits at **85% lines** in-process, with seven modules at 100% (`diff`, `errors`, `iso`, `layout`, `plan`, `policy`, `url`) and the remainder above 87% — so **branch coverage at 80%** is the most representative single number. The HTML report at `coverage/index.html` shows per-file detail.

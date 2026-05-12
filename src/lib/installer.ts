@@ -21,6 +21,13 @@ export interface ApplyManifestResult {
   unchanged: string[];
   conflicts: Conflict[];
   backups: string[];
+  /**
+   * Destinations that the lockfile recorded under this source but the new
+   * manifest no longer mentions — orphaned by an upstream removal or a ref
+   * swap. Renamed to `.bak.<ts>` (matching uninstall's precedent) and dropped
+   * from `lockfile.installed`. Empty on first install.
+   */
+  removed: string[];
 }
 
 export interface RemoveFromLockfileOptions {
@@ -53,6 +60,12 @@ export interface RemoveFromLockfileResult {
  *   4. {@link commitStaged} — atomic-rename each staged file into place,
  *      backing up any pre-existing differing target to `.bak.<timestamp>`.
  *      Mutates the lockfile as files commit.
+ *   5. {@link pruneOrphans} — for every lockfile entry owned by `sourceUrl`
+ *      that the new plan no longer mentions, rename the disk file to
+ *      `.bak.<ts>` and drop the lockfile entry. Closes the "ref swap leaves
+ *      cheer.md on disk" gap that v0.2.4 documented; also makes sync's
+ *      "removed" counter finally truthful — previously the diff reported it
+ *      and applyManifest ignored it.
  *
  * Phase 4 is best-effort atomic per file (single `fs.rename` on the same
  * filesystem) but not cross-file transactional — a phase-4 failure midway
@@ -60,12 +73,18 @@ export interface RemoveFromLockfileResult {
  * dirs exist; the user still has `.bak` files plus the staging tree (NOT
  * cleaned on phase-4 failure) for manual recovery.
  *
+ * Phase 5 runs unconditionally — even when there's nothing to write —
+ * because the most common orphan case is "same source, same ref, upstream
+ * removed a file"; preparePlan's toWrite is empty in that case but the
+ * orphan still needs cleaning. Failures mid-prune leave the lockfile and
+ * disk consistent with each other (entry dropped only after rename success).
+ *
  * Lockfile mutation note: phase 2 records lockfile entries for *unchanged*
  * items (since they need no on-disk write). Even when the eventual
- * toWrite list is empty and applyManifest short-circuits before phase 3,
- * the lockfile has already been mutated in place — the caller is expected
- * to persist it. This is intentional: an unchanged file should still
- * record its current source pin so subsequent removals know about it.
+ * toWrite list is empty and the write phases are skipped, the lockfile has
+ * already been mutated in place — the caller is expected to persist it.
+ * This is intentional: an unchanged file should still record its current
+ * source pin so subsequent removals know about it.
  */
 export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyManifestResult> {
   const plan = planFiles(opts.manifest, opts.claudeHome);
@@ -73,25 +92,28 @@ export async function applyManifest(opts: ApplyManifestOptions): Promise<ApplyMa
 
   const prepared = await preparePlan(plan, opts, now);
 
-  if (prepared.toWrite.length === 0) {
-    return {
-      installed: [],
-      updated: [],
-      unchanged: prepared.unchanged,
-      conflicts: prepared.conflicts,
-      backups: [],
-    };
+  let installed: string[] = [];
+  let updated: string[] = [];
+  const backups: string[] = [];
+
+  if (prepared.toWrite.length > 0) {
+    const staged = await stagePlan(prepared.toWrite, opts.claudeHome);
+    const committed = await commitStaged(staged, opts, now);
+    installed = committed.installed;
+    updated = committed.updated;
+    backups.push(...committed.backups);
   }
 
-  const staged = await stagePlan(prepared.toWrite, opts.claudeHome);
-  const committed = await commitStaged(staged, opts, now);
+  const orphaned = await pruneOrphans(plan, opts);
+  backups.push(...orphaned.backups);
 
   return {
-    installed: committed.installed,
-    updated: committed.updated,
+    installed,
+    updated,
     unchanged: prepared.unchanged,
     conflicts: prepared.conflicts,
-    backups: committed.backups,
+    backups,
+    removed: orphaned.removed,
   };
 }
 
@@ -271,6 +293,53 @@ async function commitStaged(
   // some left over).
   await fs.rm(staged.stagingRoot, { recursive: true, force: true });
   return out;
+}
+
+/**
+ * Phase 5 — drop lockfile entries (and the disk files they reference) for
+ * destinations owned by `sourceUrl` that the new plan no longer mentions.
+ * Renames each existing file to `.bak.<ts>` (matching uninstall's
+ * never-destroy precedent) before deleting the lockfile entry, so the user
+ * can recover a stray orphan if needed.
+ *
+ * Entries pointing at paths that are no longer on disk (a v0.2.3 dangling
+ * case — `--claude-home` was a tmp dir that has since been cleaned) are
+ * still pruned from the lockfile, just with no backup to record.
+ *
+ * Ordering: rename first, then drop the lockfile entry. A rename failure
+ * leaves the entry in place so the lockfile keeps reflecting on-disk truth
+ * (the next applyManifest sees the same orphan and tries again). Mutation
+ * of `opts.lockfile.installed` happens in this function — the caller is
+ * expected to persist the lockfile after applyManifest returns, same as
+ * for the write phases.
+ */
+async function pruneOrphans(
+  plan: PlannedFile[],
+  opts: ApplyManifestOptions,
+): Promise<{ removed: string[]; backups: string[] }> {
+  const stillInPlan = new Set(plan.map((p) => p.destPath));
+  // Snapshot the candidates before mutating — iterating `Object.entries`
+  // while `delete`-ing keys is fine in practice, but extracting the list
+  // first makes intent obvious and decouples the scan from the mutation.
+  const candidates: string[] = [];
+  for (const [destPath, entry] of Object.entries(opts.lockfile.installed)) {
+    if (entry.sourceUrl !== opts.sourceUrl) continue;
+    if (stillInPlan.has(destPath)) continue;
+    candidates.push(destPath);
+  }
+
+  const removed: string[] = [];
+  const backups: string[] = [];
+  for (const destPath of candidates) {
+    if (await pathExists(destPath)) {
+      const backupPath = `${destPath}.bak.${backupStamp()}`;
+      await fs.rename(destPath, backupPath);
+      backups.push(backupPath);
+    }
+    delete opts.lockfile.installed[destPath];
+    removed.push(destPath);
+  }
+  return { removed, backups };
 }
 
 function lockEntry(item: PlannedFile, opts: ApplyManifestOptions, now: string): LockInstalledEntry {

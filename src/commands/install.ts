@@ -48,6 +48,14 @@ export interface InstallResult {
   unchanged: string[];
   conflicts: Conflict[];
   backups: string[];
+  /**
+   * Lockfile entries that existed before this run but the new manifest no
+   * longer mentions — the orphan-cleanup pass renamed each disk file to
+   * `.bak.<ts>` (recoverable) and dropped the lockfile entry. Always empty
+   * on a first install; populated on re-install when upstream removed
+   * files, or after `ccpp checkout` to a ref that drops files.
+   */
+  removed: string[];
 }
 
 export interface InstallSourceParams {
@@ -350,6 +358,7 @@ export async function syncSourceToDisk(
     result.updated.push(...retry.updated);
     result.unchanged.push(...retry.unchanged);
     result.backups.push(...retry.backups);
+    result.removed.push(...retry.removed);
     result.conflicts = retry.conflicts;
   }
 
@@ -507,21 +516,16 @@ function emitInstallSummary(
   url: string,
   sha: string,
   ref: string,
-  result: {
-    installed: string[];
-    updated: string[];
-    unchanged: string[];
-    conflicts: Conflict[];
-    backups: string[];
-  },
+  result: InstallResult,
   common: ResolvedCommon,
 ): void {
   if (common.json) {
     process.stdout.write(`${JSON.stringify({ url, sha, ref, ...result })}\n`);
     return;
   }
+  const removedSuffix = result.removed.length > 0 ? `, ${result.removed.length} removed` : '';
   log(
-    `${green('✓')} ${url} ${dim(`@${formatShortSha(sha)}`)} (${ref}) — ${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged`,
+    `${green('✓')} ${url} ${dim(`@${formatShortSha(sha)}`)} (${ref}) — ${result.installed.length} new, ${result.updated.length} updated, ${result.unchanged.length} unchanged${removedSuffix}`,
     common,
   );
   log(`  ${dim('config:')} ${common.configPath}`, common);

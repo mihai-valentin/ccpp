@@ -209,13 +209,14 @@ SRC_REF_BACK="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("'"$C
 [ "$(cat "$PING_FILE")" = "$PING_MASTER_BYTES" ] || fail "ping.md not restored to master bytes after swap back"
 pass "round-trip: ping.md restored byte-for-byte; config back on master"
 
-# cheer.md lingers on disk after the swap-back — this is a known v0.2.4
-# limitation (applyManifest doesn't auto-delete files that left the new ref's
-# manifest). The test surfaces it without failing; orphan-cleanup is tracked
-# for a future release.
-if [ -f "$CLAUDE_HOME/agents/cheer.md" ]; then
-  info "cheer.md still on disk after swap back (known v0.2.4 orphan-cleanup gap)"
-fi
+# v0.2.5 orphan-cleanup: cheer.md was added by the branch and is no longer
+# in master's manifest, so applyManifest's prune pass renamed it to
+# .bak.<ts> and dropped the lockfile entry on the swap back.
+[ ! -f "$CLAUDE_HOME/agents/cheer.md" ] \
+  || fail "cheer.md should have been pruned on swap back (orphan cleanup)"
+BAK_COUNT="$(ls "$CLAUDE_HOME/agents/"cheer.md.bak.* 2>/dev/null | wc -l)"
+[ "$BAK_COUNT" -ge 1 ] || fail "expected a cheer.md.bak.<ts> file from the prune; found none"
+pass "orphan cleanup: cheer.md renamed to .bak on swap back"
 
 # No-op when already on master.
 NOOP_JSON="$("$CCPP_BIN" checkout "$REMOTE" master \
@@ -251,18 +252,17 @@ pass "config recorded ref=$TAG"
 
 # -------- 9. ccpp uninstall round-trip --------
 #
-# After the round-trip in step 7, lockfile.installed carries 6 entries: the
-# 5 master files plus an orphan cheer.md left behind by the swap back (the
-# v0.2.4 orphan-cleanup gap surfaced in the step-7 info line). Uninstall
-# treats all 6 as in-scope: the 5 master files are renamed to .bak, and
-# cheer.md (still on disk from add-cheer-agent) is renamed too.
+# After the round-trip in step 7, lockfile.installed should hold exactly 5
+# entries — the 5 master files. The cheer.md orphan from add-cheer-agent
+# was pruned by applyManifest's cleanup pass on the swap back, so it's not
+# in the lockfile anymore (and its .bak.<ts> is on disk but not tracked).
 say "ccpp uninstall $REMOTE"
 UNINSTALL_JSON="$(ccpp uninstall "$REMOTE" --json)"
 REMOVED_COUNT="$(echo "$UNINSTALL_JSON" | jq_get 'o.removed.length')"
 BACKUPS_COUNT="$(echo "$UNINSTALL_JSON" | jq_get 'o.backups.length')"
-[ "$REMOVED_COUNT" = "6" ] || fail "expected 6 removed (5 master + 1 orphan from checkout round-trip), got $REMOVED_COUNT"
-[ "$BACKUPS_COUNT" = "6" ] || fail "expected 6 backups, got $BACKUPS_COUNT"
-pass "uninstall removed 6 files (5 master + 1 orphan), kept 6 .bak files"
+[ "$REMOVED_COUNT" = "5" ] || fail "expected 5 removed (orphan was already pruned on checkout swap-back), got $REMOVED_COUNT"
+[ "$BACKUPS_COUNT" = "5" ] || fail "expected 5 backups, got $BACKUPS_COUNT"
+pass "uninstall removed 5 files, kept 5 .bak files (orphan already pruned in step 7)"
 
 for f in "${EXPECTED[@]}"; do
   [ ! -f "$f" ] || fail "$f should be gone after uninstall"

@@ -268,12 +268,6 @@ async function applySource(
   priorSha: string | null,
   policy: SyncPolicy,
 ): Promise<SourceSyncReport> {
-  // Snapshot the destinations this source previously owned so we can
-  // compute "files removed from the manifest since last sync" after apply.
-  const priorDests = Object.entries(ctx.lockfile.installed)
-    .filter(([, entry]) => entry.sourceUrl === source.url)
-    .map(([dest]) => dest);
-
   const result = await applyManifest({
     manifest,
     sourceUrl: source.url,
@@ -289,15 +283,18 @@ async function applySource(
     lastSync: new Date().toISOString(),
   };
 
-  const current = new Set([...result.installed, ...result.updated, ...result.unchanged]);
-  const removed = priorDests.filter((p) => !current.has(p));
-
+  // applyManifest's orphan-cleanup pass renames every dropped destination
+  // to `.bak.<ts>` and emits the destPath list in `result.removed`. Before
+  // v0.2.5 sync computed this by subtracting (installed + updated +
+  // unchanged) from a pre-apply lockfile snapshot, but reported it without
+  // any actual disk action — the "N removed" counter was true on paper but
+  // a lie in practice. Now it's truthful.
   if (!ctx.opts.quiet && !ctx.opts.json) {
     const priorShort = priorSha ? formatShortSha(priorSha) : '(new)';
     const newShort = formatShortSha(synced.sha);
     const suffix = applyStatus === 'no-changes' ? dim(' (up-to-date)') : '';
     process.stdout.write(
-      `${green('✓')} ${source.url}  ${dim(`policy=${policy}`)}  SHA: ${priorShort} -> ${newShort}  (${result.installed.length} added, ${result.updated.length} modified, ${removed.length} removed)${suffix}\n`,
+      `${green('✓')} ${source.url}  ${dim(`policy=${policy}`)}  SHA: ${priorShort} -> ${newShort}  (${result.installed.length} added, ${result.updated.length} modified, ${result.removed.length} removed)${suffix}\n`,
     );
   }
 
@@ -327,7 +324,7 @@ async function applySource(
     installed: result.installed,
     updated: result.updated,
     unchanged: result.unchanged,
-    removed,
+    removed: result.removed,
     conflicts: result.conflicts,
     backups: result.backups,
   };

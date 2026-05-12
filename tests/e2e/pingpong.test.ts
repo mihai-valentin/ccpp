@@ -394,13 +394,17 @@ describe('e2e: ccpp checkout against ccpp-test-pingpong', () => {
     const lock = JSON.parse(await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8'));
     expect(lock.sources[REMOTE].ref).toBe('master');
 
-    // Known v0.2.4 orphan-cleanup gap: cheer.md was added on the branch and
-    // never removed by the swap-back applyManifest pass, so it lingers on
-    // disk. Re-encode the gap as an assertion so when orphan-cleanup ships
-    // and this expectation flips, the change to the contract is loud and
-    // traceable. Flip `.resolves` to `.rejects` (and update CHANGELOG)
-    // when the orphan-cleanup pass lands.
-    await expect(fs.access(cheerPath(claudeHome))).resolves.toBeUndefined();
+    // v0.2.5 orphan-cleanup: cheer.md was added by the branch and is no
+    // longer in master's manifest, so applyManifest's prune pass renames it
+    // to .bak.<ts> and drops the lockfile entry. The original path is gone.
+    await expect(fs.access(cheerPath(claudeHome))).rejects.toThrow();
+
+    // The `.bak` rename of cheer.md is reported in the JSON output's
+    // `removed` array (destination path) and `backups` array (.bak path).
+    expect(out.removed).toContain(cheerPath(claudeHome));
+    expect(out.backups.some((b: string) => b.startsWith(`${cheerPath(claudeHome)}.bak.`))).toBe(
+      true,
+    );
   }, 90_000);
 
   it('--dry-run reports the changeset without writing anything', async () => {
@@ -433,11 +437,9 @@ describe('e2e: ccpp checkout against ccpp-test-pingpong', () => {
 
   it('checkout to the same ref is a no-op (exits 0, emits noop:true, writes nothing)', async () => {
     if (!net()) return;
-    await cli(
-      ['install', `${REMOTE}@master`, '--claude-home', claudeHome, '--quiet'],
-      scratch,
-      { CCPP_CACHE: cacheRoot },
-    );
+    await cli(['install', `${REMOTE}@master`, '--claude-home', claudeHome, '--quiet'], scratch, {
+      CCPP_CACHE: cacheRoot,
+    });
     const cfgBefore = await fs.readFile(join(scratch, 'ccpp.config.json'), 'utf8');
     const lockBefore = await fs.readFile(join(scratch, 'ccpp.lock.json'), 'utf8');
 

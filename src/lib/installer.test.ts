@@ -520,3 +520,133 @@ describe('removeFromLockfile', () => {
     expect(lockfile.installed).toEqual({});
   });
 });
+
+describe('applyManifest — orphan cleanup', () => {
+  it('renames lockfile-tracked files dropped from the new manifest to .bak and drops the lockfile entry', async () => {
+    // Set up the post-ref-swap state directly: lockfile says we own
+    // agents/cheer.md (from a hypothetical add-cheer-agent branch) and
+    // commands/hello.md (still present on master), but the new manifest
+    // only lists hello.md. The orphan pass should rename cheer.md to .bak
+    // and prune its lockfile entry. hello.md stays untouched because the
+    // new plan still mentions it.
+    const helloSrc = await writeSourceFile('commands/hello.md', 'hello body');
+    const helloDest = join(claudeHome, 'commands/hello.md');
+    const cheerDest = join(claudeHome, 'agents/cheer.md');
+    await fs.mkdir(dirname(helloDest), { recursive: true });
+    await fs.mkdir(dirname(cheerDest), { recursive: true });
+    await fs.writeFile(helloDest, 'hello body'); // bytes match what the manifest will install
+    await fs.writeFile(cheerDest, 'cheer body — about to be orphaned');
+
+    const lockfile: Lockfile = emptyLockfile();
+    lockfile.installed[helloDest] = {
+      sourceUrl: 'https://x/one.git',
+      sourcePath: 'commands/hello.md',
+      sourceSha: 'sha-prior',
+      installedAt: '2026-05-12T00:00:00.000Z',
+    };
+    lockfile.installed[cheerDest] = {
+      sourceUrl: 'https://x/one.git',
+      sourcePath: 'agents/cheer.md',
+      sourceSha: 'sha-prior',
+      installedAt: '2026-05-12T00:00:00.000Z',
+    };
+
+    const result = await applyManifest({
+      manifest: buildManifest({
+        standaloneCommands: [{ name: 'hello', sourceFile: helloSrc }],
+        // No agents/cheer.md anywhere — it has been orphaned by this manifest.
+      }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-current',
+      claudeHome,
+      lockfile,
+    });
+
+    // The orphan is reported and the disk file is gone (renamed to .bak).
+    expect(result.removed).toEqual([cheerDest]);
+    expect(result.backups).toHaveLength(1);
+    expect(result.backups[0]).toMatch(/agents\/cheer\.md\.bak\./);
+    await expect(fs.access(cheerDest)).rejects.toThrow();
+    await expect(fs.access(result.backups[0] as string)).resolves.toBeUndefined();
+
+    // hello.md is reported as unchanged and stays put.
+    expect(result.unchanged).toEqual([helloDest]);
+    expect(await read(helloDest)).toBe('hello body');
+
+    // Lockfile drops the orphan, refreshes the survivor's sha pin.
+    expect(lockfile.installed[cheerDest]).toBeUndefined();
+    expect(lockfile.installed[helloDest]?.sourceSha).toBe('sha-current');
+  });
+
+  it('prunes a dangling lockfile entry (path no longer on disk) without producing a backup', async () => {
+    // The v0.2.3 dangling-entry case: a previous run used --claude-home in
+    // tmp, the tmp dir got cleaned, and the lockfile still references a
+    // path that no longer exists. The orphan pass should still drop the
+    // lockfile entry — just without a `.bak` line because there was nothing
+    // on disk to rename.
+    const cheerDest = join(claudeHome, 'agents/cheer.md');
+    const lockfile: Lockfile = emptyLockfile();
+    lockfile.installed[cheerDest] = {
+      sourceUrl: 'https://x/one.git',
+      sourcePath: 'agents/cheer.md',
+      sourceSha: 'sha-prior',
+      installedAt: '2026-05-12T00:00:00.000Z',
+    };
+
+    const result = await applyManifest({
+      manifest: buildManifest(), // empty manifest — every prior entry is an orphan
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-current',
+      claudeHome,
+      lockfile,
+    });
+
+    expect(result.removed).toEqual([cheerDest]);
+    expect(result.backups).toEqual([]);
+    expect(lockfile.installed[cheerDest]).toBeUndefined();
+  });
+
+  it('leaves entries owned by other sources untouched even when the new manifest is empty', async () => {
+    // Multi-source safety: orphan cleanup only considers entries whose
+    // sourceUrl matches the one we're applying. A foreign source's entry
+    // must survive even if its destination isn't in our new plan.
+    const otherDest = join(claudeHome, 'commands/foreign.md');
+    const lockfile: Lockfile = emptyLockfile();
+    lockfile.installed[otherDest] = {
+      sourceUrl: 'https://other/repo.git',
+      sourcePath: 'commands/foreign.md',
+      sourceSha: 'sha-other',
+      installedAt: '2026-05-12T00:00:00.000Z',
+    };
+
+    const result = await applyManifest({
+      manifest: buildManifest(), // we have nothing to install
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-current',
+      claudeHome,
+      lockfile,
+    });
+
+    expect(result.removed).toEqual([]);
+    expect(result.backups).toEqual([]);
+    expect(lockfile.installed[otherDest]?.sourceUrl).toBe('https://other/repo.git');
+  });
+
+  it('returns removed:[] on a first install (no prior lockfile entries)', async () => {
+    const helloSrc = await writeSourceFile('commands/hello.md', 'hello body');
+    const lockfile: Lockfile = emptyLockfile();
+
+    const result = await applyManifest({
+      manifest: buildManifest({
+        standaloneCommands: [{ name: 'hello', sourceFile: helloSrc }],
+      }),
+      sourceUrl: 'https://x/one.git',
+      sourceSha: 'sha-first',
+      claudeHome,
+      lockfile,
+    });
+
+    expect(result.removed).toEqual([]);
+    expect(result.installed).toHaveLength(1);
+  });
+});
