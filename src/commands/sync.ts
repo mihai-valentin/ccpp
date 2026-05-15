@@ -8,6 +8,7 @@ import {
 import { type Changeset, computeChangeset, hasChanges } from '../lib/diff.js';
 import { CollisionError, EnvError, UserError } from '../lib/errors.js';
 import { type CloneOrUpdateResult, cloneOrUpdate } from '../lib/git.js';
+import { pickAgentPaths, writeHookNotice } from '../lib/hookNotice.js';
 import { applyManifest } from '../lib/installer.js';
 import { readLockfile, writeLockfile } from '../lib/lockfile.js';
 import { type SyncOutcome, type SyncTrigger, appendSyncLog } from '../lib/log.js';
@@ -149,6 +150,25 @@ export async function runSync(opts: RunSyncOpts): Promise<SyncReport> {
   }
 
   await writeLockfile(opts.lockfilePath, lockfile);
+
+  // Hook-mode agent-change notice. Claude Code's agent registry is read once
+  // at session start (upstream issue anthropics/claude-code#58592), so agents
+  // installed mid-session by a SessionStart hook only become dispatchable on
+  // the NEXT session. We write a one-shot notice for hook.sh to surface to
+  // stderr so the user knows to restart.
+  if (ctx.trigger === 'hook' && opts.logPath !== undefined) {
+    const changedAgents = pickAgentPaths(
+      perSource.flatMap((r) => [...r.installed, ...r.updated, ...r.removed]),
+      opts.claudeHome,
+    );
+    if (changedAgents.length > 0) {
+      const list = changedAgents.map((p) => `  - ${p}`).join('\n');
+      await writeHookNotice(
+        opts.logPath,
+        `[ccpp] ${changedAgents.length} agent file(s) changed — restart Claude Code to pick them up.\n${list}`,
+      );
+    }
+  }
 
   const report: SyncReport = { sources: perSource };
 

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.6] - 2026-05-15
+
+### Features
+
+- **Agent-restart notice surfaced after hook-triggered sync.** Claude Code reads the user-scope agent registry once at session start; the SessionStart hook fires *after* that read, so a `ccpp sync` that introduces a new agent file leaves it on disk but not dispatchable until the next CC restart (commands and skills are unaffected — they hot-reload per turn). Documented upstream as [anthropics/claude-code#58592](https://github.com/anthropics/claude-code/issues/58592) (open) and [#55680](https://github.com/anthropics/claude-code/issues/55680) (closed, docs clarification). When a hook-triggered sync adds / updates / removes an agent file, `ccpp sync --trigger hook` now writes a one-shot notice to `<ccppHome>/last-hook-notice.txt`; the SessionStart `hook.sh` cats it to stderr and deletes it, so the user sees a single warning at the top of the next CC session listing the changed agent paths and instructing them to restart. No notice in `--trigger manual` mode (the terminal user already sees sync output). Existing `~/.ccpp/hook.sh` files require a one-time `ccpp install-hook` re-run to pick up the notice-surfacing block; the in-band `ccpp` sync logic and the notice file itself land on first upgrade with no manual step.
+
+### Docs
+
+- **README no longer claims live agent reload.** Two callouts in the "Real-time visibility" and "Auto-update via SessionStart hook" sections previously read "Claude Code picks up changes on its own — no `/reload-plugins` or restart required", which was accurate for commands and skills but misleading for agents. Updated to qualify: commands and skills live, agents require a Claude Code restart. New subsection **"Real-time visibility and the agent-restart caveat"** explains the upstream cause, links the two GH issues, and shows the exact stderr notice format users will see.
+
 ## [0.2.5] - 2026-05-12
 
 ### Bug fixes

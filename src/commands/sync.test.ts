@@ -291,3 +291,50 @@ describe('resolveOverride — flag mutual exclusion', () => {
     expect(resolveOverride({})).toBeUndefined();
   });
 });
+
+describe('runSync — hook agent-change notice', () => {
+  async function syncOnceWith(trigger: 'hook' | 'manual', logPath: string): Promise<void> {
+    await writeConfig({
+      version: 1,
+      scope: 'user',
+      autoAccept: true,
+      sources: [{ url: fixture.url }],
+    });
+    await runSync({
+      configPath,
+      lockfilePath,
+      claudeHome,
+      json: false,
+      quiet: true,
+      logPath,
+      trigger,
+    });
+  }
+
+  it('writes last-hook-notice.txt when trigger=hook and an agent file is installed', async () => {
+    await fs.mkdir(join(fixture.workPath, 'agents'), { recursive: true });
+    await fixture.advance('agents/skeptic.md', '---\nname: skeptic\n---\nbody\n');
+    const logPath = join(scratch, 'sync.log');
+    await syncOnceWith('hook', logPath);
+
+    const noticePath = join(scratch, 'last-hook-notice.txt');
+    const body = await fs.readFile(noticePath, 'utf8');
+    expect(body).toMatch(/restart Claude Code/);
+    expect(body).toContain(join(claudeHome, 'agents', 'skeptic.md'));
+  }, 30_000);
+
+  it('does not write a notice when only commands change (no agent paths)', async () => {
+    // The default fixture installs commands/hello.md — no agent files.
+    const logPath = join(scratch, 'sync.log');
+    await syncOnceWith('hook', logPath);
+    await expect(fs.access(join(scratch, 'last-hook-notice.txt'))).rejects.toThrow();
+  }, 30_000);
+
+  it('does not write a notice when trigger=manual, even with agent changes', async () => {
+    await fs.mkdir(join(fixture.workPath, 'agents'), { recursive: true });
+    await fixture.advance('agents/triage.md', '---\nname: triage\n---\nbody\n');
+    const logPath = join(scratch, 'sync.log');
+    await syncOnceWith('manual', logPath);
+    await expect(fs.access(join(scratch, 'last-hook-notice.txt'))).rejects.toThrow();
+  }, 30_000);
+});

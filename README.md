@@ -111,7 +111,7 @@ ccpp install git@bitbucket.org:your-org/ai-plugins.git --project
 
 ccpp reads each source's `.claude-plugin/marketplace.json` — the same manifest shape Claude Code already uses — and, when that file is missing, falls back to a convention scan: any directory under `plugins/<name>/` with a `.claude-plugin/plugin.json` is a plugin; any `commands/*.md` at the repo root is a standalone slash command; any `agents/*.md` at the repo root or under `plugins/<name>/agents/` is a Claude Code subagent. This means existing repos that pre-date the marketplace format work without authoring a manifest first.
 
-Content is written into Claude Code's native auto-discovery paths under `~/.claude/` — `commands/`, `skills/`, and `agents/`. Claude Code picks up changes on its own — no `/reload-plugins` or restart required. Short names (e.g. `/git-commit`, agent `triage`) are preserved; ccpp does **not** rewrite them to namespaced forms.
+Content is written into Claude Code's native auto-discovery paths under `~/.claude/` — `commands/`, `skills/`, and `agents/`. Claude Code picks up commands and skills live (no `/reload-plugins` needed); **agents currently require a Claude Code restart** to become dispatchable — see [Real-time visibility](#real-time-visibility-and-the-agent-restart-caveat) below. Short names (e.g. `/git-commit`, agent `triage`) are preserved; ccpp does **not** rewrite them to namespaced forms.
 
 Every `ccpp install` and `ccpp sync` updates `ccpp.lock.json`, pinning each source to the exact commit SHA that was materialised on disk. The lockfile is what makes teammate installs byte-identical. What governs *when* upstream changes land — and whether you see a diff-preview prompt before they do — is the per-source `syncPolicy` plus `autoAccept` flag, both introduced in v0.1.1 and documented in the [Sync policy](#sync-policy) and [Auto-update](#auto-update-via-sessionstart-hook) sections below. By default (`syncPolicy: pinned`, `autoAccept: false`), every `ccpp sync` shows you an added / modified / removed summary and asks `[y/N]` before touching `~/.claude/`.
 
@@ -159,7 +159,7 @@ ccpp sync --pinned          # treat every source as policy=pinned for this run
 
 ## Auto-update via SessionStart hook
 
-Pair `syncPolicy: latest` + `autoAccept: true` + a Claude Code SessionStart hook to get upstream changes applied automatically at the start of every Claude Code session — no manual `ccpp sync`, no `/reload-plugins`.
+Pair `syncPolicy: latest` + `autoAccept: true` + a Claude Code SessionStart hook to get upstream changes applied automatically at the start of every Claude Code session — no manual `ccpp sync`. New commands and skills are live in the running session; new or modified agents land on disk but only become dispatchable on the **next** session start — see [Real-time visibility](#real-time-visibility-and-the-agent-restart-caveat).
 
 ```bash
 # 1. Opt in to latest (one-time policy-risk warning)
@@ -197,6 +197,22 @@ The hook is intentionally defensive:
 - **Never blocks Claude Code.** Sync errors (offline, auth failure, network blip) are logged to `~/.ccpp/sync.log` and the hook exits 0 — Claude Code proceeds with whatever state `~/.claude/` already has.
 - **No prompts inside the hook.** Hooks are non-interactive. A source with `policy: latest` but `autoAccept: false` is *skipped* during a hook-triggered sync (with a log line) — you still need to run `ccpp sync` manually to review that source.
 - **Fast.** Hook start-up adds <500ms on a cache-hit happy path.
+
+### Real-time visibility and the agent-restart caveat
+
+Claude Code re-scans `commands/` and `skills/` on the fly, so a sync that adds a new slash-command or skill — manually or via the SessionStart hook — is usable in the same session without any reload step.
+
+**Agents are different.** Claude Code reads `~/.claude/agents/` and project-local `.claude/agents/` **once at session start** and caches the registry in memory. There is currently no slash command, hook event, or filesystem-watcher that refreshes this cache mid-session. A new or modified agent file lands on disk correctly, but `Task({ subagent_type: "<name>" })` will fail with `Agent type '<name>' not found` until Claude Code is restarted. This is an upstream limitation — see [anthropics/claude-code#58592](https://github.com/anthropics/claude-code/issues/58592) (open) and [#55680](https://github.com/anthropics/claude-code/issues/55680) (closed: docs clarification).
+
+To help you notice this when it happens, the SessionStart hook prints a one-shot stderr warning at the top of the next session whenever the previous hook-triggered sync added, modified, or removed an agent file:
+
+```
+[ccpp] 2 agent file(s) changed — restart Claude Code to pick them up.
+  - /home/you/.claude/agents/skeptic.md
+  - /home/you/.claude/agents/triage.md
+```
+
+The notice clears itself once shown. You can keep working in the current session — commands and skills from the same sync are already live — and restart at your next natural break to pick up the new agents.
 
 ### What `ccpp status` shows
 

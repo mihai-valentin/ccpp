@@ -60,12 +60,21 @@ export const HOOK_SCRIPT_BODY = `#!/usr/bin/env bash
 
 set +e
 
-LOG="\${CCPP_HOME:-\$HOME/.ccpp}/sync.log"
-mkdir -p "\$(dirname "\$LOG")" 2>/dev/null
+CCPP_HOME_DIR="\${CCPP_HOME:-\$HOME/.ccpp}"
+LOG="\$CCPP_HOME_DIR/sync.log"
+NOTICE="\$CCPP_HOME_DIR/last-hook-notice.txt"
+mkdir -p "\$CCPP_HOME_DIR" 2>/dev/null
 
 {
   ccpp sync --auto-accept --trigger hook
 } >/dev/null 2>>"\$LOG"
+
+# Surface a one-shot notice (e.g. agent changes that require a CC restart —
+# see anthropics/claude-code#58592). Best-effort: missing file is fine.
+if [ -s "\$NOTICE" ]; then
+  cat "\$NOTICE" >&2
+  rm -f "\$NOTICE"
+fi
 
 exit 0
 `;
